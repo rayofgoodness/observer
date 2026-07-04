@@ -3,9 +3,9 @@ import { Inject, Logger } from '@nestjs/common'
 import type { Job } from 'bullmq'
 import type { Knex } from 'knex'
 import { KNEX } from '../database/database.module'
-import type { ProjectsService } from '../projects/projects.service'
-import type { AiService } from './ai.service'
-import type { JiraService } from './jira.service'
+import { ProjectsService } from '../projects/projects.service'
+import { AiService } from './ai.service'
+import { JiraService } from './jira.service'
 
 @Processor('jira-tasks', { concurrency: 2 })
 export class JiraProcessor extends WorkerHost {

@@ -5,7 +5,7 @@ import type { Knex } from 'knex'
 import { computeFingerprint } from '../common/fingerprint.util'
 import { KNEX } from '../database/database.module'
 import type { Project } from '../projects/projects.service'
-import type { IncomingErrorDto } from './dto/ingest.dto'
+import type { IngestDto } from './dto/ingest.dto'
 
 @Injectable()
 export class IngestService {
@@ -14,8 +14,9 @@ export class IngestService {
     @InjectQueue('jira-tasks') private readonly jiraQueue: Queue,
   ) {}
 
-  async process(project: Project, items: IncomingErrorDto[]) {
+  async process(project: Project, dto: IngestDto) {
     const newErrorIds: number[] = []
+    const items = dto.errors
 
     for (const item of items) {
       const message = item.message.trim()
@@ -41,14 +42,20 @@ export class IngestService {
         })
         .returning(['id', this.db.raw('(xmax = 0) as is_new')])
 
+      const effectiveDevice = item.device ?? dto.meta?.device ?? {}
+      const device =
+        JSON.stringify(effectiveDevice).length > 2048
+          ? { truncated: true }
+          : effectiveDevice
+
       await this.db('error_occurrences').insert({
         error_id: row.id,
         project_id: project.id,
-        user_id: item.userId ?? null,
+        user_id: item.userId ?? dto.meta?.userId ?? null,
         url: item.url ?? '',
         route: item.route ?? '',
-        device: JSON.stringify(item.device ?? {}),
-        app_version: item.appVersion ?? '',
+        device: JSON.stringify(device),
+        app_version: item.appVersion ?? dto.meta?.appVersion ?? '',
         occurred_at: item.occurredAt
           ? new Date(item.occurredAt)
           : this.db.fn.now(),

@@ -11,9 +11,6 @@ interface CapturedError {
   source: 'vue' | 'window' | 'promise'
   url: string
   route: string
-  userId: string | null
-  appVersion: string
-  device: Record<string, unknown>
   occurredAt: string
 }
 
@@ -53,15 +50,22 @@ export default defineNuxtPlugin((nuxtApp) => {
   function flush(useBeacon = false) {
     if (!queue.length) return
     const batch = queue.splice(0, MAX_BATCH)
-    const body = { errors: batch }
+    const body = {
+      meta: {
+        device: deviceInfo(),
+        userId: resolveUserId(),
+        appVersion: config.appVersion,
+      },
+      errors: batch,
+    }
 
     if (useBeacon && navigator.sendBeacon) {
       const url = `${config.endpoint}?key=${encodeURIComponent(config.publicKey)}`
-      navigator.sendBeacon(
+      const sent = navigator.sendBeacon(
         url,
         new Blob([JSON.stringify(body)], { type: 'application/json' }),
       )
-      return
+      if (sent) return
     }
 
     fetch(config.endpoint, {
@@ -96,14 +100,11 @@ export default defineNuxtPlugin((nuxtApp) => {
       sessionCounts.set(key, count + 1)
 
       queue.push({
-        message: error.message,
-        stack: error.stack ?? '',
+        message: error.message.slice(0, 1000),
+        stack: (error.stack ?? '').slice(0, 8000),
         source,
-        url: window.location.href,
-        route: route.fullPath,
-        userId: resolveUserId(),
-        appVersion: config.appVersion,
-        device: deviceInfo(),
+        url: window.location.href.slice(0, 2000),
+        route: route.fullPath.slice(0, 500),
         occurredAt: new Date().toISOString(),
       })
       scheduleFlush()

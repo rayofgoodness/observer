@@ -6,7 +6,7 @@ import {
   IsString,
   MaxLength,
 } from 'class-validator'
-import type { ProjectsService } from '../projects/projects.service'
+import { ProjectsService } from '../projects/projects.service'
 import { AdminGuard } from './admin.guard'
 
 class CreateProjectDto {

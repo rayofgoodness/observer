@@ -1,8 +1,8 @@
 import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common'
 import { ProjectAuthGuard } from '../projects/project-auth.guard'
 import type { Project } from '../projects/projects.service'
-import type { IngestDto } from './dto/ingest.dto'
-import type { IngestService } from './ingest.service'
+import { IngestDto } from './dto/ingest.dto'
+import { IngestService } from './ingest.service'
 
 @Controller('v1')
 export class IngestController {
@@ -14,6 +14,6 @@ export class IngestController {
     @Body() body: IngestDto,
     @Req() req: { project: Project },
   ) {
-    return this.ingest.process(req.project, body.errors)
+    return this.ingest.process(req.project, body)
   }
 }

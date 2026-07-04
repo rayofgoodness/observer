@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common'
 import type IORedis from 'ioredis'
 import { REDIS } from '../database/database.module'
-import type { ProjectsService } from './projects.service'
+import { ProjectsService } from './projects.service'
 
 @Injectable()
 export class ProjectAuthGuard implements CanActivate {

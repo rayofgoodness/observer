@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer'
 import {
   ArrayMaxSize,
+  ArrayMinSize,
   IsArray,
   IsISO8601,
   IsObject,
@@ -54,8 +55,30 @@ export class IncomingErrorDto {
   occurredAt?: string
 }
 
+export class IngestMetaDto {
+  @IsOptional()
+  @IsObject()
+  device?: Record<string, unknown>
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  userId?: string
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  appVersion?: string
+}
+
 export class IngestDto {
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => IngestMetaDto)
+  meta?: IngestMetaDto
+
   @IsArray()
+  @ArrayMinSize(1)
   @ArrayMaxSize(20)
   @ValidateNested({ each: true })
   @Type(() => IncomingErrorDto)
