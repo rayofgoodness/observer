@@ -9,7 +9,7 @@ export interface ModuleOptions {
 
 export default defineNuxtModule<ModuleOptions>({
   meta: {
-    name: '@yourorg/nuxt-error-tracker',
+    name: '@ray_of_goodness_/nuxt-error-tracker',
     configKey: 'errorTracker',
   },
   defaults: {

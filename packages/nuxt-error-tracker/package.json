@@ -1,5 +1,5 @@
 {
-  "name": "@yourorg/nuxt-error-tracker",
+  "name": "@ray_of_goodness_/nuxt-error-tracker",
   "version": "0.1.0",
   "type": "module",
   "exports": {
@@ -13,7 +13,8 @@
     "dist"
   ],
   "scripts": {
-    "build": "nuxt-module-build build"
+    "build": "nuxt-module-build build",
+    "prepublishOnly": "nuxt-module-build build"
   },
   "dependencies": {
     "@nuxt/kit": "^3.14.0"
