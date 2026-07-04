@@ -15,7 +15,7 @@ Package manager is **bun** (README says `npm i` — bun is canonical).
 - Migrations: `cd api && bun run migrate` (Knex, config in `api/knexfile.ts`, migrations in `api/migrations/` with `.ts` extension)
 - SDK build: `cd packages/nuxt-error-tracker && bun run build`
 - Format/lint: Biome (`bunx biome check --write .` from repo root); a PostToolUse hook auto-formats edited files
-- No tests yet. When adding tests, use **Vitest** — not Jest.
+- Tests (Vitest, api only): `cd api && bun run test`; single file: `bun run test src/common/fingerprint.util.spec.ts`. Spec files live next to source (`*.spec.ts`), excluded from `nest build` via tsconfig. Use Vitest — not Jest.
 
 ## Env
 
