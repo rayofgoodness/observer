@@ -1,9 +1,4 @@
-import {
-  addPlugin,
-  createResolver,
-  defineNuxtModule,
-  extendViteConfig,
-} from '@nuxt/kit'
+import { addPlugin, createResolver, defineNuxtModule } from '@nuxt/kit'
 
 export interface ModuleOptions {
   endpoint: string
@@ -63,16 +58,6 @@ export default defineNuxtModule<ModuleOptions>({
       // Server DTO caps at 50 breadcrumbs — stay at or below.
       maxBreadcrumbs: Math.min(posInt(options.maxBreadcrumbs, 30), 50),
     }
-
-    // protobufjs is CJS — pre-bundle it so Vite doesn't discover it at
-    // runtime and force a dev-server page reload on first error capture.
-    extendViteConfig((config) => {
-      config.optimizeDeps ||= {}
-      config.optimizeDeps.include ||= []
-      if (!config.optimizeDeps.include.includes('protobufjs')) {
-        config.optimizeDeps.include.push('protobufjs')
-      }
-    })
 
     const resolver = createResolver(import.meta.url)
     // Client plugin does the real capture; server stub provides no-op helpers
