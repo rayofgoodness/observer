@@ -7,6 +7,9 @@ import { Controller, Get, Header } from '@nestjs/common'
 export class DashboardUiController {
   @Get('dashboard')
   @Header('Content-Type', 'text/html; charset=utf-8')
+  // Console markup changes on every deploy — don't let browsers serve a stale
+  // cached copy (e.g. an older build without the breadcrumb view).
+  @Header('Cache-Control', 'no-cache')
   page(): string {
     return DASHBOARD_HTML
   }
@@ -92,10 +95,16 @@ const DASHBOARD_HTML = /* html */ `<!doctype html>
   .badge.ignored { background: rgba(138,147,166,.16); color: var(--muted); }
   .err-row { cursor: pointer; }
   .err-row:hover { background: var(--panel-2); }
+  .lvl { font-size: 11px; padding: 2px 7px; border-radius: 999px; text-transform: uppercase; letter-spacing: .3px; }
+  .lvl.fatal, .lvl.error { background: rgba(255,92,108,.16); color: var(--red); }
+  .lvl.warning { background: rgba(245,166,35,.16); color: var(--amber); }
+  .lvl.info { background: rgba(91,140,255,.16); color: var(--accent); }
+  .lvl.debug { background: rgba(138,147,166,.16); color: var(--muted); }
   .crumbs { list-style: none; margin: 8px 0 0; padding: 0; border-left: 2px solid var(--border); }
   .crumb { display: flex; gap: 10px; padding: 5px 0 5px 12px; position: relative; font-size: 12px; }
   .crumb::before { content: ''; position: absolute; left: -5px; top: 11px; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
   .crumb.click::before { background: var(--accent); }
+  .crumb.input::before { background: var(--green); }
   .crumb.navigation::before { background: #9b7cff; }
   .crumb.fetch::before { background: var(--amber); }
   .crumb.console::before, .crumb.error::before { background: var(--red); }
@@ -295,9 +304,10 @@ async function openLogs(key, name) {
   try {
     const res = await api('GET', '/account/projects/' + encodeURIComponent(key) + '/errors?limit=50')
     if (!res.items.length) { $('#mBody').innerHTML = '<div class="empty">No errors yet.</div>'; return }
-    $('#mBody').innerHTML = '<table><thead><tr><th>Count</th><th>Source</th><th>Status</th><th>Message</th><th>Last seen</th></tr></thead><tbody>' +
+    $('#mBody').innerHTML = '<table><thead><tr><th>Count</th><th>Level</th><th>Source</th><th>Status</th><th>Message</th><th>Last seen</th></tr></thead><tbody>' +
       res.items.map((e) => \`<tr class="err-row" data-err="\${e.id}">
         <td>\${e.occurrences_count}</td>
+        <td><span class="lvl \${esc(e.level || 'error')}">\${esc(e.level || 'error')}</span></td>
         <td><span class="src">\${esc(e.source)}</span></td>
         <td><span class="badge \${esc(e.status)}">\${esc(e.status)}</span></td>
         <td style="max-width:340px">\${esc(e.message)}</td>
@@ -332,7 +342,7 @@ async function openDetail(id) {
     </tr>\`).join('') : '<tr><td colspan="3" class="empty">No occurrences.</td></tr>'
     $('#mBody').innerHTML = \`
       <button class="ghost" id="mBack" style="margin-bottom:12px">← Back</button>
-      <div><span class="src">\${esc(e.source)}</span> <span class="badge \${esc(e.status)}">\${esc(e.status)}</span>
+      <div><span class="lvl \${esc(e.level || 'error')}">\${esc(e.level || 'error')}</span> <span class="src">\${esc(e.source)}</span> <span class="badge \${esc(e.status)}">\${esc(e.status)}</span>
         <span class="muted" style="font-size:12px">· \${e.occurrences_count} occurrence(s)</span></div>
       <div style="font-weight:600;margin:6px 0 2px">\${esc(e.message)}</div>
       <pre>\${esc(e.stack || '(no stack)')}</pre>

@@ -28,6 +28,8 @@ export class IngestService {
       const stack = item.stack ?? ''
       const fingerprint = computeFingerprint(message, stack)
 
+      const level = item.level ?? 'error'
+
       const [row] = await this.db('errors')
         .insert({
           project_id: project.id,
@@ -35,6 +37,7 @@ export class IngestService {
           message,
           stack,
           source: item.source ?? 'unknown',
+          level,
           first_seen: this.db.fn.now(),
           last_seen: this.db.fn.now(),
           occurrences_count: 1,
@@ -42,6 +45,8 @@ export class IngestService {
         .onConflict(['project_id', 'fingerprint'])
         .merge({
           last_seen: this.db.fn.now(),
+          // Reflect the most recent occurrence's severity on the group.
+          level,
           occurrences_count: this.db.raw('errors.occurrences_count + 1'),
         })
         .returning(['id', this.db.raw('(xmax = 0) as is_new')])

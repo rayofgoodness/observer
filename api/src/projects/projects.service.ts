@@ -25,6 +25,7 @@ export interface ErrorRow {
   fingerprint: string
   message: string
   source: string
+  level: string
   status: string
   jira_key: string | null
   occurrences_count: number
@@ -158,6 +159,7 @@ export class ProjectsService {
         'e.fingerprint',
         'e.message',
         'e.source',
+        'e.level',
         'e.status',
         'e.jira_key',
         'e.occurrences_count',

@@ -8,6 +8,7 @@ import { Controller, Get, Header } from '@nestjs/common'
 export class AdminUiController {
   @Get('admin')
   @Header('Content-Type', 'text/html; charset=utf-8')
+  @Header('Cache-Control', 'no-cache')
   page(): string {
     return ADMIN_HTML
   }
@@ -97,6 +98,11 @@ const ADMIN_HTML = /* html */ `<!doctype html>
   .badge.new { background: rgba(245,166,35,.16); color: var(--amber); }
   .badge.resolved { background: rgba(46,204,113,.14); color: var(--green); }
   .badge.ignored { background: rgba(138,147,166,.16); color: var(--muted); }
+  .lvl { font-size: 11px; padding: 2px 7px; border-radius: 999px; text-transform: uppercase; letter-spacing: .3px; }
+  .lvl.fatal, .lvl.error { background: rgba(255,92,108,.16); color: var(--red); }
+  .lvl.warning { background: rgba(245,166,35,.16); color: var(--amber); }
+  .lvl.info { background: rgba(91,140,255,.16); color: var(--accent); }
+  .lvl.debug { background: rgba(138,147,166,.16); color: var(--muted); }
   .det-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; flex-wrap: wrap; }
   pre {
     background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
@@ -113,6 +119,7 @@ const ADMIN_HTML = /* html */ `<!doctype html>
   .crumb { display: flex; gap: 10px; padding: 5px 0 5px 12px; position: relative; font-size: 12px; }
   .crumb::before { content: ''; position: absolute; left: -5px; top: 11px; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
   .crumb.click::before { background: var(--accent); }
+  .crumb.input::before { background: var(--green); }
   .crumb.navigation::before { background: #9b7cff; }
   .crumb.fetch::before { background: var(--amber); }
   .crumb.console::before, .crumb.error::before { background: var(--red); }
@@ -331,10 +338,11 @@ function renderErrorList(errors) {
   const table = !errors.length
     ? '<div class="empty">No errors' + (logState.status ? ' with status "' + esc(logState.status) + '"' : '') + '.</div>'
     : \`<table><thead><tr>
-        <th>Count</th><th>Source</th><th>Status</th><th>Message</th><th>Last seen</th>
+        <th>Count</th><th>Level</th><th>Source</th><th>Status</th><th>Message</th><th>Last seen</th>
         </tr></thead><tbody>\` + errors.map((e) => \`
         <tr class="err-row" data-err="\${e.id}">
           <td>\${e.occurrences_count}</td>
+          <td><span class="lvl \${esc(e.level || 'error')}">\${esc(e.level || 'error')}</span></td>
           <td><span class="src">\${esc(e.source)}</span></td>
           <td><span class="badge \${esc(e.status)}">\${esc(e.status)}</span>\${e.jira_key ? ' <span class="muted" style="font-size:11px">' + esc(e.jira_key) + '</span>' : ''}</td>
           <td style="max-width:360px">\${esc(e.message)}</td>
@@ -384,6 +392,7 @@ async function openErrorDetail(id) {
       <button class="ghost back" id="mBack">← Back to list</button>
       <div class="det-head">
         <div>
+          <span class="lvl \${esc(e.level || 'error')}">\${esc(e.level || 'error')}</span>
           <span class="src">\${esc(e.source)}</span>
           <span class="badge \${esc(e.status)}">\${esc(e.status)}</span>
           <span class="muted" style="font-size:12px">· \${e.occurrences_count} occurrence(s) · first \${fmtDate(e.first_seen)}</span>

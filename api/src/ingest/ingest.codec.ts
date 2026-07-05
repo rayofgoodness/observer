@@ -24,6 +24,7 @@ message Error {
   string device = 8;
   string occurredAt = 9;
   repeated Breadcrumb breadcrumbs = 10;
+  string level = 11;
 }
 message Meta {
   string device = 1;
@@ -83,6 +84,7 @@ export function decodeBatch(buffer: Buffer): unknown {
     appVersion: str(e.appVersion),
     device: json(e.device),
     occurredAt: str(e.occurredAt),
+    level: str(e.level),
     breadcrumbs: Array.isArray(e.breadcrumbs)
       ? (e.breadcrumbs as Array<Record<string, unknown>>).map((b) => ({
           type: str(b.type),

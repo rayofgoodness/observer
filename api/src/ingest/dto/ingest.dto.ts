@@ -3,6 +3,7 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsIn,
   IsISO8601,
   IsObject,
   IsOptional,
@@ -10,6 +11,14 @@ import {
   MaxLength,
   ValidateNested,
 } from 'class-validator'
+
+export const ERROR_LEVELS = [
+  'fatal',
+  'error',
+  'warning',
+  'info',
+  'debug',
+] as const
 
 export class BreadcrumbDto {
   @IsOptional()
@@ -55,6 +64,10 @@ export class IncomingErrorDto {
   @IsString()
   @MaxLength(20)
   source?: string
+
+  @IsOptional()
+  @IsIn(ERROR_LEVELS)
+  level?: string
 
   @IsOptional()
   @IsString()

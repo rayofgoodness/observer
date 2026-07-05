@@ -1,6 +1,6 @@
 {
   "name": "nuxt-error-tracker",
-  "version": "0.1.7",
+  "version": "0.1.12",
   "type": "module",
   "exports": {
     ".": {

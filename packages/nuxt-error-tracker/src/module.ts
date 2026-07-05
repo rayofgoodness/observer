@@ -14,6 +14,12 @@ export interface ModuleOptions {
   captureFetch?: boolean
   /** Patch console.error to capture logged-but-not-thrown errors. Default true. */
   captureConsole?: boolean
+  /**
+   * Record form input values as breadcrumbs (on change/blur). Sensitive fields
+   * (password/email/tel + name/id matching card/cvv/token/secret/otp/…) are
+   * masked. Default false — opt in, since it can capture user-entered data.
+   */
+  captureInputs?: boolean
   /** Debounce before a batch is flushed, in ms. Default 2000. */
   flushDelay?: number
   /** Max occurrences of the same error captured per session. Default 5. */
@@ -42,6 +48,7 @@ export default defineNuxtModule<ModuleOptions>({
     enabled: true,
     captureFetch: true,
     captureConsole: true,
+    captureInputs: false,
     flushDelay: 2000,
     maxPerSession: 5,
     maxBatch: 20,
@@ -56,6 +63,7 @@ export default defineNuxtModule<ModuleOptions>({
       appVersion: options.appVersion ?? 'unknown',
       captureFetch: options.captureFetch !== false,
       captureConsole: options.captureConsole !== false,
+      captureInputs: options.captureInputs === true,
       flushDelay: posInt(options.flushDelay, 2000),
       maxPerSession: posInt(options.maxPerSession, 5),
       // Server hard-caps batches at 20 — never emit larger, even if misconfigured.
@@ -89,8 +97,9 @@ interface Breadcrumb {
   timestamp?: string
   data?: Record<string, unknown>
 }
+type ErrorLevel = 'fatal' | 'error' | 'warning' | 'info' | 'debug'
 interface ErrorTrackerHelpers {
-  $trackError: (err: unknown) => void
+  $trackError: (err: unknown, level?: ErrorLevel) => void
   $addBreadcrumb: (crumb: Breadcrumb) => void
 }
 declare module '#app' {

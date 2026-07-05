@@ -114,6 +114,7 @@ export default defineNuxtConfig({
 | `enabled`         | `boolean` | `true`      | Master switch. `false` = fully disabled.                           |
 | `captureFetch`    | `boolean` | `true`      | Wrap `fetch` to breadcrumb requests and report failures/5xx.       |
 | `captureConsole`  | `boolean` | `true`      | Patch `console.error` to capture logged-but-not-thrown errors.     |
+| `captureInputs`   | `boolean` | `false`     | Record form input values as breadcrumbs (on change). Sensitive fields masked. Opt-in — captures user-entered data. |
 | `flushDelay`      | `number`  | `2000`      | Debounce (ms) before a batch is sent.                              |
 | `maxPerSession`   | `number`  | `5`         | Max occurrences of the *same* error captured per session.          |
 | `maxBatch`        | `number`  | `20`        | Max errors per request (server also hard-caps at 20).              |
@@ -126,11 +127,12 @@ The plugin injects two helpers for manual use:
 ```ts
 const { $trackError, $addBreadcrumb } = useNuxtApp()
 
-// Report a handled error yourself
+// Report a handled error yourself — optional severity level
+// ('fatal' | 'error' | 'warning' | 'info' | 'debug', default 'error')
 try {
   await mayFail()
 } catch (e) {
-  $trackError(e)
+  $trackError(e, 'warning')
 }
 
 // Add your own breadcrumb to the trail
@@ -164,6 +166,12 @@ lengths are truncated client-side to match server limits.
 Click breadcrumbs record the element (tag / id / class / short text) — **never
 input values**. Nothing is captured until an error occurs; breadcrumbs live only
 in memory and ship attached to an error.
+
+Input values are **only** captured when you opt in with `captureInputs: true`.
+Even then, sensitive fields are masked (stored as `[masked, N chars]`, never in
+the clear): any `type="password"`, plus fields whose `name` / `id` /
+`autocomplete` match `pass`, `secret`, `token`, `otp`, `cvv`, `card`, `iban`,
+`ssn`, `pin`, `auth`, etc. Non-sensitive values are truncated to 100 chars.
 
 ## How it sends
 
