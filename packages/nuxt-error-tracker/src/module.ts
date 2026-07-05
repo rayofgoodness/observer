@@ -1,8 +1,8 @@
 import {
   addPlugin,
+  addTypeTemplate,
   createResolver,
   defineNuxtModule,
-  extendViteConfig,
 } from '@nuxt/kit'
 
 export interface ModuleOptions {
@@ -14,6 +14,12 @@ export interface ModuleOptions {
   captureFetch?: boolean
   /** Patch console.error to capture logged-but-not-thrown errors. Default true. */
   captureConsole?: boolean
+  /**
+   * Record form input values as breadcrumbs (on change/blur). Sensitive fields
+   * (password/email/tel + name/id matching card/cvv/token/secret/otp/…) are
+   * masked. Default false — opt in, since it can capture user-entered data.
+   */
+  captureInputs?: boolean
   /** Debounce before a batch is flushed, in ms. Default 2000. */
   flushDelay?: number
   /** Max occurrences of the same error captured per session. Default 5. */
@@ -32,7 +38,7 @@ function posInt(value: unknown, fallback: number): number {
 
 export default defineNuxtModule<ModuleOptions>({
   meta: {
-    name: '@ray_of_goodness_/nuxt-error-tracker',
+    name: 'nuxt-error-tracker',
     configKey: 'errorTracker',
   },
   defaults: {
@@ -42,6 +48,7 @@ export default defineNuxtModule<ModuleOptions>({
     enabled: true,
     captureFetch: true,
     captureConsole: true,
+    captureInputs: false,
     flushDelay: 2000,
     maxPerSession: 5,
     maxBatch: 20,
@@ -56,6 +63,7 @@ export default defineNuxtModule<ModuleOptions>({
       appVersion: options.appVersion ?? 'unknown',
       captureFetch: options.captureFetch !== false,
       captureConsole: options.captureConsole !== false,
+      captureInputs: options.captureInputs === true,
       flushDelay: posInt(options.flushDelay, 2000),
       maxPerSession: posInt(options.maxPerSession, 5),
       // Server hard-caps batches at 20 — never emit larger, even if misconfigured.
@@ -64,20 +72,44 @@ export default defineNuxtModule<ModuleOptions>({
       maxBreadcrumbs: Math.min(posInt(options.maxBreadcrumbs, 30), 50),
     }
 
-    // protobufjs is CJS — pre-bundle it so Vite doesn't discover it at
-    // runtime and force a dev-server page reload on first error capture.
-    extendViteConfig((config) => {
-      config.optimizeDeps ||= {}
-      config.optimizeDeps.include ||= []
-      if (!config.optimizeDeps.include.includes('protobufjs')) {
-        config.optimizeDeps.include.push('protobufjs')
-      }
-    })
-
     const resolver = createResolver(import.meta.url)
+    // Client plugin does the real capture; server stub provides no-op helpers
+    // so $trackError/$addBreadcrumb never throw during SSR.
+    addPlugin({
+      src: resolver.resolve('./runtime/plugin.server'),
+      mode: 'server',
+    })
     addPlugin({
       src: resolver.resolve('./runtime/plugin.client'),
       mode: 'client',
+    })
+
+    // Type the injected helpers so consumers get `$trackError` / `$addBreadcrumb`
+    // as functions (not `unknown`) in both `useNuxtApp()` and templates.
+    addTypeTemplate({
+      filename: 'types/nuxt-error-tracker.d.ts',
+      getContents: () => `
+interface Breadcrumb {
+  type?: string
+  category?: string
+  message?: string
+  level?: string
+  timestamp?: string
+  data?: Record<string, unknown>
+}
+type ErrorLevel = 'fatal' | 'error' | 'warning' | 'info' | 'debug'
+interface ErrorTrackerHelpers {
+  $trackError: (err: unknown, level?: ErrorLevel) => void
+  $addBreadcrumb: (crumb: Breadcrumb) => void
+}
+declare module '#app' {
+  interface NuxtApp extends ErrorTrackerHelpers {}
+}
+declare module 'vue' {
+  interface ComponentCustomProperties extends ErrorTrackerHelpers {}
+}
+export {}
+`,
     })
   },
 })

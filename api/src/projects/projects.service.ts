@@ -7,6 +7,7 @@ import { KNEX, REDIS } from '../database/database.module'
 
 export interface Project {
   id: number
+  user_id: number | null
   name: string
   public_key: string
   is_active: boolean
@@ -17,6 +18,8 @@ export interface Project {
   jira_email: string | null
   jira_api_token_encrypted: string | null
   jira_project_key: string | null
+  telegram_chat_id: string | null
+  telegram_enabled: boolean
 }
 
 export interface ErrorRow {
@@ -24,6 +27,7 @@ export interface ErrorRow {
   fingerprint: string
   message: string
   source: string
+  level: string
   status: string
   jira_key: string | null
   occurrences_count: number
@@ -103,6 +107,8 @@ export class ProjectsService {
       allowedOrigins?: string[]
       isActive?: boolean
       rateLimitPerMinute?: number
+      telegramChatId?: string | null
+      telegramEnabled?: boolean
     },
   ): Promise<Project | null> {
     const dbPatch: Record<string, unknown> = {}
@@ -112,6 +118,10 @@ export class ProjectsService {
       dbPatch.rate_limit_per_minute = patch.rateLimitPerMinute
     if (patch.allowedOrigins !== undefined)
       dbPatch.allowed_origins = JSON.stringify(patch.allowedOrigins)
+    if (patch.telegramChatId !== undefined)
+      dbPatch.telegram_chat_id = patch.telegramChatId || null
+    if (patch.telegramEnabled !== undefined)
+      dbPatch.telegram_enabled = patch.telegramEnabled
 
     const [project] = await this.db('projects')
       .where({ public_key: publicKey })
@@ -157,6 +167,7 @@ export class ProjectsService {
         'e.fingerprint',
         'e.message',
         'e.source',
+        'e.level',
         'e.status',
         'e.jira_key',
         'e.occurrences_count',
@@ -199,8 +210,35 @@ export class ProjectsService {
     return { error, occurrences }
   }
 
+  /** Projects owned by a user, newest first. */
+  async listByUser(userId: number): Promise<Project[]> {
+    return this.db('projects')
+      .where({ user_id: userId })
+      .orderBy('id', 'desc')
+      .select('*')
+  }
+
+  /** A single project by public key, only if owned by the given user. */
+  async findOwned(publicKey: string, userId: number): Promise<Project | null> {
+    return (
+      (await this.db('projects')
+        .where({ public_key: publicKey, user_id: userId })
+        .first()) ?? null
+    )
+  }
+
+  /** True if the error's project is owned by the given user. */
+  async errorBelongsToUser(errorId: number, userId: number): Promise<boolean> {
+    const row = await this.db('errors as e')
+      .join('projects as p', 'p.id', 'e.project_id')
+      .where({ 'e.id': errorId, 'p.user_id': userId })
+      .first('e.id')
+    return Boolean(row)
+  }
+
   async create(input: {
     name: string
+    userId?: number
     allowedOrigins?: string[]
     aiJiraEnabled?: boolean
     jiraBaseUrl?: string
@@ -211,6 +249,7 @@ export class ProjectsService {
     const [project] = await this.db('projects')
       .insert({
         name: input.name,
+        user_id: input.userId ?? null,
         public_key: `pk_${randomBytes(24).toString('hex')}`,
         allowed_origins: JSON.stringify(input.allowedOrigins ?? []),
         ai_jira_enabled: input.aiJiraEnabled ?? false,

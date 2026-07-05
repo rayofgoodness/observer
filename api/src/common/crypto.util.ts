@@ -3,6 +3,8 @@ import {
   createDecipheriv,
   createHash,
   randomBytes,
+  scryptSync,
+  timingSafeEqual,
 } from 'node:crypto'
 
 function key(): Buffer {
@@ -31,4 +33,23 @@ export function decrypt(payload: string): string {
   return Buffer.concat([decipher.update(data), decipher.final()]).toString(
     'utf8',
   )
+}
+
+const SCRYPT_KEYLEN = 32
+
+/** Hash a password with a per-user random salt. Format: `salt:hash` (hex). */
+export function hashPassword(plain: string): string {
+  const salt = randomBytes(16)
+  const hash = scryptSync(plain, salt, SCRYPT_KEYLEN)
+  return `${salt.toString('hex')}:${hash.toString('hex')}`
+}
+
+/** Constant-time verify against a `salt:hash` string produced above. */
+export function verifyPassword(plain: string, stored: string): boolean {
+  const [saltHex, hashHex] = stored.split(':')
+  if (!saltHex || !hashHex) return false
+  const salt = Buffer.from(saltHex, 'hex')
+  const expected = Buffer.from(hashHex, 'hex')
+  const actual = scryptSync(plain, salt, expected.length)
+  return expected.length === actual.length && timingSafeEqual(expected, actual)
 }

@@ -5,12 +5,13 @@ import {
   useRouter,
   useRuntimeConfig,
 } from '#imports'
-import { type Crumb, encodeBatch } from './ingest.codec'
+import { type Crumb, type ErrorLevel, encodeBatch } from './ingest.codec'
 
 interface CapturedError {
   message: string
   stack: string
   source: 'vue' | 'window' | 'promise' | 'fetch' | 'console'
+  level: ErrorLevel
   url: string
   route: string
   occurredAt: string
@@ -19,6 +20,9 @@ interface CapturedError {
 
 export default defineNuxtPlugin((nuxtApp) => {
   const config = useRuntimeConfig().public.errorTracker
+  // Defensive: the module already skips registration without keys, but never
+  // let a missing/partial config throw and take down the host Nuxt app.
+  if (!config || !config.endpoint || !config.publicKey) return
   const route = useRoute()
 
   const FLUSH_DELAY = config.flushDelay ?? 2000
@@ -58,42 +62,53 @@ export default defineNuxtPlugin((nuxtApp) => {
     return `${message.slice(0, 120)}::${(stack.split('\n')[1] ?? '').trim()}`
   }
 
+  // Hard ceiling on the in-memory queue so a persistently-unreachable endpoint
+  // can never grow it without bound (re-queued failed batches included).
+  const MAX_QUEUE = 200
+
   function flush(useBeacon = false) {
     if (!queue.length) return
-    const batch = queue.splice(0, MAX_BATCH)
-    const body = {
-      meta: {
-        device: deviceInfo(),
-        userId: resolveUserId(),
-        appVersion: config.appVersion,
-      },
-      errors: batch,
+    // Fully defensive: nothing in the send path may throw into the host app —
+    // flush runs from timers, visibilitychange, and the fetch wrapper.
+    try {
+      const batch = queue.splice(0, MAX_BATCH)
+      const body = {
+        meta: {
+          device: deviceInfo(),
+          userId: resolveUserId(),
+          appVersion: config.appVersion,
+        },
+        errors: batch,
+      }
+
+      // Binary wire format (protobuf) — payload isn't human-readable in the
+      // network panel. NOT encryption: anyone with the schema can decode it.
+      const bytes = encodeBatch(body)
+
+      if (useBeacon && navigator.sendBeacon) {
+        const url = `${config.endpoint}?key=${encodeURIComponent(config.publicKey)}`
+        const sent = navigator.sendBeacon(
+          url,
+          new Blob([bytes], { type: 'application/x-protobuf' }),
+        )
+        if (sent) return
+      }
+
+      fetch(config.endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-protobuf',
+          'X-Public-Key': config.publicKey,
+        },
+        body: bytes,
+        keepalive: true,
+      }).catch(() => {
+        // Re-queue for a later retry, but never past the ceiling (drop oldest).
+        if (queue.length < MAX_QUEUE) queue.unshift(...batch)
+      })
+    } catch {
+      // Encoding/serialization failure — drop this batch rather than surface it.
     }
-
-    // Binary wire format (protobuf) — payload isn't human-readable in the
-    // network panel. NOT encryption: anyone with the schema can still decode it.
-    const bytes = encodeBatch(body)
-
-    if (useBeacon && navigator.sendBeacon) {
-      const url = `${config.endpoint}?key=${encodeURIComponent(config.publicKey)}`
-      const sent = navigator.sendBeacon(
-        url,
-        new Blob([bytes], { type: 'application/x-protobuf' }),
-      )
-      if (sent) return
-    }
-
-    fetch(config.endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-protobuf',
-        'X-Public-Key': config.publicKey,
-      },
-      body: bytes,
-      keepalive: true,
-    }).catch(() => {
-      queue.unshift(...batch)
-    })
   }
 
   function scheduleFlush() {
@@ -104,7 +119,11 @@ export default defineNuxtPlugin((nuxtApp) => {
     }, FLUSH_DELAY)
   }
 
-  function capture(err: unknown, source: CapturedError['source']) {
+  function capture(
+    err: unknown,
+    source: CapturedError['source'],
+    level: ErrorLevel = 'error',
+  ) {
     try {
       const error = err instanceof Error ? err : new Error(String(err))
       if (error.message === 'Script error.') return
@@ -118,6 +137,7 @@ export default defineNuxtPlugin((nuxtApp) => {
         message: error.message.slice(0, 1000),
         stack: (error.stack ?? '').slice(0, 8000),
         source,
+        level,
         url: window.location.href.slice(0, 2000),
         route: route.fullPath.slice(0, 500),
         occurredAt: new Date().toISOString(),
@@ -160,6 +180,61 @@ export default defineNuxtPlugin((nuxtApp) => {
     },
     { capture: true, passive: true },
   )
+
+  // Inputs (opt-in): record what the user typed, on commit (change/blur), so the
+  // trail shows the data they entered. Sensitive fields are masked, never stored
+  // in the clear. Fires on `change` (not keystrokes) to avoid flooding.
+  if (config.captureInputs) {
+    const SENSITIVE =
+      /pass|secret|token|otp|onetime|one-time|cvv|cvc|card|iban|ssn|pin|auth|security/i
+    const fieldLabel = (el: HTMLInputElement): string =>
+      el.name ||
+      el.id ||
+      el.getAttribute('aria-label') ||
+      el.getAttribute('placeholder') ||
+      el.type ||
+      'field'
+    const isSensitive = (el: HTMLInputElement): boolean => {
+      const type = (el.type || '').toLowerCase()
+      if (type === 'password') return true
+      const hint = `${el.name || ''} ${el.id || ''} ${el.getAttribute('autocomplete') || ''}`
+      return SENSITIVE.test(hint)
+    }
+
+    document.addEventListener(
+      'change',
+      (event) => {
+        try {
+          const el = event.target as HTMLInputElement | null
+          if (!el || !el.tagName) return
+          const tag = el.tagName.toLowerCase()
+          if (tag !== 'input' && tag !== 'textarea' && tag !== 'select') return
+          const type = (el.type || '').toLowerCase()
+
+          let value: string
+          if (type === 'checkbox' || type === 'radio') {
+            value = el.checked ? 'checked' : 'unchecked'
+          } else if (isSensitive(el)) {
+            const len = (el.value ?? '').length
+            value = len ? `[masked, ${len} chars]` : '[empty]'
+          } else {
+            const raw = el.value ?? ''
+            if (!raw) return // skip empty text fields
+            value = raw.length > 100 ? `${raw.slice(0, 100)}…` : raw
+          }
+
+          addCrumb({
+            type: 'input',
+            category: 'ui.input',
+            message: `${fieldLabel(el)} = ${value}`,
+          })
+        } catch {
+          // Never let breadcrumb capture disrupt the page's own change handlers.
+        }
+      },
+      { capture: true, passive: true },
+    )
+  }
 
   // Navigation: route changes.
   useRouter().afterEach((to, from) => {
@@ -247,7 +322,8 @@ export default defineNuxtPlugin((nuxtApp) => {
 
   return {
     provide: {
-      trackError: (err: unknown) => capture(err, 'window'),
+      trackError: (err: unknown, level: ErrorLevel = 'error') =>
+        capture(err, 'window', level),
       addBreadcrumb: (c: Crumb) => addCrumb(c),
     },
   }

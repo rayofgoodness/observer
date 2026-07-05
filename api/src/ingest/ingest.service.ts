@@ -12,6 +12,7 @@ export class IngestService {
   constructor(
     @Inject(KNEX) private readonly db: Knex,
     @InjectQueue('jira-tasks') private readonly jiraQueue: Queue,
+    @InjectQueue('notifications') private readonly notifyQueue: Queue,
   ) {}
 
   async process(project: Project, dto: IngestDto) {
@@ -28,6 +29,8 @@ export class IngestService {
       const stack = item.stack ?? ''
       const fingerprint = computeFingerprint(message, stack)
 
+      const level = item.level ?? 'error'
+
       const [row] = await this.db('errors')
         .insert({
           project_id: project.id,
@@ -35,6 +38,7 @@ export class IngestService {
           message,
           stack,
           source: item.source ?? 'unknown',
+          level,
           first_seen: this.db.fn.now(),
           last_seen: this.db.fn.now(),
           occurrences_count: 1,
@@ -42,6 +46,8 @@ export class IngestService {
         .onConflict(['project_id', 'fingerprint'])
         .merge({
           last_seen: this.db.fn.now(),
+          // Reflect the most recent occurrence's severity on the group.
+          level,
           occurrences_count: this.db.raw('errors.occurrences_count + 1'),
         })
         .returning(['id', this.db.raw('(xmax = 0) as is_new')])
@@ -75,6 +81,29 @@ export class IngestService {
       })
 
       if (row.is_new) newErrorIds.push(row.id)
+    }
+
+    // Telegram: notify the project's chat for each new error group (deduped by
+    // jobId so a burst of the same new error only pings once). Fire-and-forget —
+    // the processor no-ops if telegram is disabled/unconfigured.
+    if (
+      newErrorIds.length &&
+      project.telegram_enabled &&
+      project.telegram_chat_id
+    ) {
+      await Promise.all(
+        newErrorIds.map((id) =>
+          this.notifyQueue.add(
+            'new-error',
+            { errorId: id, projectId: project.id },
+            {
+              jobId: `tg-error-${id}`,
+              attempts: 3,
+              backoff: { type: 'exponential', delay: 3000 },
+            },
+          ),
+        ),
+      )
     }
 
     if (newErrorIds.length && project.ai_jira_enabled) {
