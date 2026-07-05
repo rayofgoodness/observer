@@ -11,6 +11,36 @@ import {
   ValidateNested,
 } from 'class-validator'
 
+export class BreadcrumbDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  type?: string
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  category?: string
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  message?: string
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  level?: string
+
+  @IsOptional()
+  @IsISO8601()
+  timestamp?: string
+
+  @IsOptional()
+  @IsObject()
+  data?: Record<string, unknown>
+}
+
 export class IncomingErrorDto {
   @IsString()
   @MaxLength(1000)
@@ -53,6 +83,13 @@ export class IncomingErrorDto {
   @IsOptional()
   @IsISO8601()
   occurredAt?: string
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => BreadcrumbDto)
+  breadcrumbs?: BreadcrumbDto[]
 }
 
 export class IngestMetaDto {

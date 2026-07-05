@@ -15,6 +15,10 @@ export class IngestService {
   ) {}
 
   async process(project: Project, dto: IngestDto) {
+    console.log(
+      `[ingest] project=${project.name} (id=${project.id}) errors=${dto.errors.length}`,
+      dto.errors.map((e) => e.message),
+    )
     const newErrorIds: number[] = []
     const items = dto.errors
 
@@ -48,6 +52,14 @@ export class IngestService {
           ? { truncated: true }
           : effectiveDevice
 
+      // Cap the breadcrumb trail server-side (mirrors device): drop it entirely
+      // if abnormally large rather than bloating the row.
+      const breadcrumbs = item.breadcrumbs ?? []
+      const safeBreadcrumbs =
+        JSON.stringify(breadcrumbs).length > 16384
+          ? [{ type: 'truncated', message: 'breadcrumbs too large' }]
+          : breadcrumbs
+
       await this.db('error_occurrences').insert({
         error_id: row.id,
         project_id: project.id,
@@ -55,6 +67,7 @@ export class IngestService {
         url: item.url ?? '',
         route: item.route ?? '',
         device: JSON.stringify(device),
+        breadcrumbs: JSON.stringify(safeBreadcrumbs),
         app_version: item.appVersion ?? dto.meta?.appVersion ?? '',
         occurred_at: item.occurredAt
           ? new Date(item.occurredAt)
