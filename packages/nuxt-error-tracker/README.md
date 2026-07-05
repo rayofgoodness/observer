@@ -146,6 +146,11 @@ Both helpers are always callable. Real capture happens **client-side only**; on
 the server (SSR — e.g. top-level `<script setup>`) they are safe no-ops, so
 calling them never throws.
 
+`$trackError` and `$addBreadcrumb` are **fully typed** — the module ships an
+augmentation for `NuxtApp` and Vue's `ComponentCustomProperties`, so both
+`useNuxtApp()` and template usage resolve them as functions (no `unknown` /
+TS18046). No manual `.d.ts` needed.
+
 ## What gets sent
 
 Per error: `message`, `stack`, `source` (`vue` | `window` | `promise` |

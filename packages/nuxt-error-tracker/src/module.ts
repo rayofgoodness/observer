@@ -1,4 +1,9 @@
-import { addPlugin, createResolver, defineNuxtModule } from '@nuxt/kit'
+import {
+  addPlugin,
+  addTypeTemplate,
+  createResolver,
+  defineNuxtModule,
+} from '@nuxt/kit'
 
 export interface ModuleOptions {
   endpoint: string
@@ -69,6 +74,33 @@ export default defineNuxtModule<ModuleOptions>({
     addPlugin({
       src: resolver.resolve('./runtime/plugin.client'),
       mode: 'client',
+    })
+
+    // Type the injected helpers so consumers get `$trackError` / `$addBreadcrumb`
+    // as functions (not `unknown`) in both `useNuxtApp()` and templates.
+    addTypeTemplate({
+      filename: 'types/nuxt-error-tracker.d.ts',
+      getContents: () => `
+interface Breadcrumb {
+  type?: string
+  category?: string
+  message?: string
+  level?: string
+  timestamp?: string
+  data?: Record<string, unknown>
+}
+interface ErrorTrackerHelpers {
+  $trackError: (err: unknown) => void
+  $addBreadcrumb: (crumb: Breadcrumb) => void
+}
+declare module '#app' {
+  interface NuxtApp extends ErrorTrackerHelpers {}
+}
+declare module 'vue' {
+  interface ComponentCustomProperties extends ErrorTrackerHelpers {}
+}
+export {}
+`,
     })
   },
 })
