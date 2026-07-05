@@ -23,6 +23,32 @@ npm i nuxt-error-tracker
 # or: bun add nuxt-error-tracker
 ```
 
+## Getting your keys
+
+The module needs two values — an **ingest endpoint** and a **public key**. Both
+come from your Observer dashboard. Everything after step 4 is what you paste into
+the app; from then on your errors show up in the same dashboard.
+
+1. Open the dashboard at `https://<your-observer-host>/dashboard`.
+2. **Create account** — enter an email and a password (min 8 chars), submit. You
+   stay signed in via a secure cookie.
+3. Click **New project**, give it a name (e.g. `my-app`), and optionally list the
+   origins your site runs on (comma-separated, e.g. `https://my-app.com,
+   http://localhost:3000`). Empty = accept any origin. This is the server-side
+   allowlist — requests from other origins are rejected.
+4. The project now shows a **public key** (`pk_…`) and a ready-made
+   `nuxt.config` snippet. Use **Copy key** / **Copy config**.
+5. The **endpoint** is your host + `/v1/ingest`, i.e.
+   `https://<your-observer-host>/v1/ingest`.
+
+Then configure the package ([Setup](#setup)) and deploy. Captured errors appear
+under that project in the dashboard — open **Logs** on the project to browse
+them, with stack traces, recent occurrences and the breadcrumb trail.
+
+> Origins matter: if you set an allowlist, it must include every origin your app
+> is served from (prod domains **and** `http://localhost:3000` for local dev),
+> or the browser's requests get a 401.
+
 ## Setup
 
 Add the module and point it at your ingest endpoint with your project's public
@@ -102,7 +128,7 @@ const { $trackError, $addBreadcrumb } = useNuxtApp()
 
 // Report a handled error yourself
 try {
-  await risky()
+  await mayFail()
 } catch (e) {
   $trackError(e)
 }
@@ -115,6 +141,10 @@ $addBreadcrumb({
   level: 'info',
 })
 ```
+
+Both helpers are always callable. Real capture happens **client-side only**; on
+the server (SSR — e.g. top-level `<script setup>`) they are safe no-ops, so
+calling them never throws.
 
 ## What gets sent
 

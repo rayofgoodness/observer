@@ -75,6 +75,12 @@ export default defineNuxtModule<ModuleOptions>({
     })
 
     const resolver = createResolver(import.meta.url)
+    // Client plugin does the real capture; server stub provides no-op helpers
+    // so $trackError/$addBreadcrumb never throw during SSR.
+    addPlugin({
+      src: resolver.resolve('./runtime/plugin.server'),
+      mode: 'server',
+    })
     addPlugin({
       src: resolver.resolve('./runtime/plugin.client'),
       mode: 'client',
