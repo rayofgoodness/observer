@@ -19,6 +19,9 @@ interface CapturedError {
 
 export default defineNuxtPlugin((nuxtApp) => {
   const config = useRuntimeConfig().public.errorTracker
+  // Defensive: the module already skips registration without keys, but never
+  // let a missing/partial config throw and take down the host Nuxt app.
+  if (!config || !config.endpoint || !config.publicKey) return
   const route = useRoute()
 
   const FLUSH_DELAY = config.flushDelay ?? 2000

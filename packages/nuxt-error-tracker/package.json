@@ -1,6 +1,6 @@
 {
-  "name": "@ray_of_goodness_/nuxt-error-tracker",
-  "version": "0.1.2",
+  "name": "nuxt-error-tracker",
+  "version": "0.1.4",
   "type": "module",
   "exports": {
     ".": {
@@ -12,6 +12,9 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "nuxt-module-build build",
     "prepublishOnly": "nuxt-module-build build"

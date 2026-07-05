@@ -32,7 +32,7 @@ function posInt(value: unknown, fallback: number): number {
 
 export default defineNuxtModule<ModuleOptions>({
   meta: {
-    name: '@ray_of_goodness_/nuxt-error-tracker',
+    name: 'nuxt-error-tracker',
     configKey: 'errorTracker',
   },
   defaults: {
