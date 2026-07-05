@@ -92,6 +92,16 @@ const DASHBOARD_HTML = /* html */ `<!doctype html>
   .badge.ignored { background: rgba(138,147,166,.16); color: var(--muted); }
   .err-row { cursor: pointer; }
   .err-row:hover { background: var(--panel-2); }
+  .crumbs { list-style: none; margin: 8px 0 0; padding: 0; border-left: 2px solid var(--border); }
+  .crumb { display: flex; gap: 10px; padding: 5px 0 5px 12px; position: relative; font-size: 12px; }
+  .crumb::before { content: ''; position: absolute; left: -5px; top: 11px; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .crumb.click::before { background: var(--accent); }
+  .crumb.navigation::before { background: #9b7cff; }
+  .crumb.fetch::before { background: var(--amber); }
+  .crumb.console::before, .crumb.error::before { background: var(--red); }
+  .crumb .ct { color: var(--muted); min-width: 66px; }
+  .crumb .cc { text-transform: uppercase; font-size: 10px; letter-spacing: .5px; color: var(--muted); min-width: 70px; }
+  .crumb .cm { flex: 1; word-break: break-word; }
 </style>
 </head>
 <body>
@@ -303,6 +313,18 @@ async function openDetail(id) {
     const d = await api('GET', '/account/errors/' + id)
     const e = d.error
     const occ = d.occurrences || []
+    const crumbs = (occ[0] && occ[0].breadcrumbs) || []
+    const crumbHtml = crumbs.length ? \`
+      <h2 style="margin-top:16px;font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)">History before error <span style="text-transform:none;font-weight:400">· latest occurrence</span></h2>
+      <ul class="crumbs">\` + crumbs.map((c) => {
+        const t = c.type || 'log'
+        const time = c.timestamp ? new Date(c.timestamp).toLocaleTimeString() : ''
+        return \`<li class="crumb \${esc(t)}">
+          <span class="ct">\${esc(time)}</span>
+          <span class="cc">\${esc(c.category || t)}</span>
+          <span class="cm">\${esc(c.message || '')}</span>
+        </li>\`
+      }).join('') + '</ul>' : '<div class="muted" style="margin-top:12px;font-size:12px">No breadcrumbs recorded for this occurrence.</div>'
     const occRows = occ.length ? occ.map((o) => \`<tr>
       <td class="muted" style="font-size:12px">\${fmtDate(o.occurred_at)}</td>
       <td style="font-size:12px">\${esc(o.route || '—')}</td>
@@ -314,6 +336,7 @@ async function openDetail(id) {
         <span class="muted" style="font-size:12px">· \${e.occurrences_count} occurrence(s)</span></div>
       <div style="font-weight:600;margin:6px 0 2px">\${esc(e.message)}</div>
       <pre>\${esc(e.stack || '(no stack)')}</pre>
+      \${crumbHtml}
       <h2 style="margin-top:16px;font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)">Recent occurrences</h2>
       <table><thead><tr><th>When</th><th>Route</th><th>App ver</th></tr></thead><tbody>\${occRows}</tbody></table>\`
     $('#mBack').onclick = () => openLogs(curKey)
