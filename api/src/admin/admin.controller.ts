@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   NotFoundException,
   Param,
@@ -21,8 +22,36 @@ import {
   MaxLength,
   Min,
 } from 'class-validator'
+import { MaintenanceService } from '../maintenance/maintenance.service'
 import { ProjectsService } from '../projects/projects.service'
 import { AdminGuard } from './admin.guard'
+
+class CreateScheduleDto {
+  // Standard 5-field cron (minute hour day month weekday).
+  @IsString()
+  @MaxLength(100)
+  cron!: string
+
+  @IsInt()
+  @Min(1)
+  @Max(3650)
+  olderThanDays!: number
+
+  @IsOptional()
+  @IsInt()
+  projectId?: number
+}
+
+class RunPurgeDto {
+  @IsInt()
+  @Min(1)
+  @Max(3650)
+  olderThanDays!: number
+
+  @IsOptional()
+  @IsInt()
+  projectId?: number
+}
 
 class CreateProjectDto {
   @IsString()
@@ -85,7 +114,39 @@ class UpdateErrorDto {
 @Controller('admin')
 @UseGuards(AdminGuard)
 export class AdminController {
-  constructor(private readonly projects: ProjectsService) {}
+  constructor(
+    private readonly projects: ProjectsService,
+    private readonly maintenance: MaintenanceService,
+  ) {}
+
+  // --- Scheduled maintenance (error_occurrences retention) ---
+
+  @Get('schedules')
+  listSchedules() {
+    return this.maintenance.listSchedules()
+  }
+
+  @Post('schedules')
+  createSchedule(@Body() body: CreateScheduleDto) {
+    return this.maintenance.createSchedule({
+      cron: body.cron,
+      olderThanDays: body.olderThanDays,
+      projectId: body.projectId ?? null,
+    })
+  }
+
+  @Delete('schedules')
+  async deleteSchedule(@Query('key') key: string) {
+    if (!key) throw new NotFoundException('Schedule key required')
+    const removed = await this.maintenance.removeSchedule(key)
+    if (!removed) throw new NotFoundException('Schedule not found')
+    return { removed: true }
+  }
+
+  @Post('schedules/run')
+  runPurge(@Body() body: RunPurgeDto) {
+    return this.maintenance.runNow(body.olderThanDays, body.projectId ?? null)
+  }
 
   @Get('projects')
   async listProjects() {

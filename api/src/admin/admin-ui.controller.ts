@@ -168,6 +168,24 @@ const ADMIN_HTML = /* html */ `<!doctype html>
       <tbody id="rows"><tr><td colspan="7" class="empty">Enter token to load.</td></tr></tbody>
     </table>
   </div>
+
+  <div class="card">
+    <h2>Scheduled maintenance · error retention</h2>
+    <p class="muted" style="font-size:12px;margin:0 0 12px">
+      By default, errors are kept for <strong>7 days</strong> — a daily job purges
+      older occurrences and error groups. Add your own schedules or run a cleanup now.
+    </p>
+    <div class="row">
+      <div><label>Cron (min hour day month weekday)</label><input type="text" id="schCron" placeholder="0 3 * * *" value="0 3 * * *" /></div>
+      <div><label>Delete older than (days)</label><input type="number" id="schDays" min="1" value="7" /></div>
+      <div style="flex:0 0 auto"><button id="schCreate">Add schedule</button></div>
+      <div style="flex:0 0 auto"><button class="ghost" id="schRun">Run cleanup now</button></div>
+    </div>
+    <table style="margin-top:12px">
+      <thead><tr><th>Job</th><th>Cron</th><th>Next run</th><th></th></tr></thead>
+      <tbody id="schRows"><tr><td colspan="4" class="empty">Enter token to load.</td></tr></tbody>
+    </table>
+  </div>
 </div>
 
 <div class="overlay" id="overlay">
@@ -235,8 +253,44 @@ async function load() {
   try {
     const projects = await api('GET', '/admin/projects')
     render(projects); setStatus(true, projects.length + ' project(s)')
+    loadSchedules()
   } catch (e) { setStatus(false, e.message); rowsEl.innerHTML = '<tr><td colspan="7" class="empty">' + esc(e.message) + '</td></tr>' }
 }
+
+// --- Scheduled maintenance ---
+const schRowsEl = $('#schRows')
+function renderSchedules(list) {
+  if (!list.length) { schRowsEl.innerHTML = '<tr><td colspan="4" class="empty">No schedules.</td></tr>'; return }
+  schRowsEl.innerHTML = list.map((s) => \`<tr>
+    <td>\${esc(s.id || '—')}</td>
+    <td><code style="font-size:12px">\${esc(s.cron || '—')}</code></td>
+    <td class="muted" style="font-size:12px">\${s.next ? new Date(s.next).toLocaleString() : '—'}</td>
+    <td><button class="danger" data-del-sch="\${esc(s.key)}">Delete</button></td>
+  </tr>\`).join('')
+}
+async function loadSchedules() {
+  try { renderSchedules(await api('GET', '/admin/schedules')) }
+  catch (e) { schRowsEl.innerHTML = '<tr><td colspan="4" class="empty">' + esc(e.message) + '</td></tr>' }
+}
+$('#schCreate').onclick = async () => {
+  const cron = $('#schCron').value.trim()
+  const olderThanDays = Number($('#schDays').value)
+  if (!cron || !olderThanDays) return toast('Cron and days required', true)
+  try { await api('POST', '/admin/schedules', { cron, olderThanDays }); toast('Schedule added'); loadSchedules() }
+  catch (e) { toast(e.message, true) }
+}
+$('#schRun').onclick = async () => {
+  const olderThanDays = Number($('#schDays').value) || 7
+  try { const r = await api('POST', '/admin/schedules/run', { olderThanDays }); toast('Cleanup queued (' + olderThanDays + 'd)') }
+  catch (e) { toast(e.message, true) }
+}
+schRowsEl.addEventListener('click', async (ev) => {
+  const btn = ev.target.closest('button'); if (!btn) return
+  const key = btn.dataset.delSch
+  if (key === undefined) return
+  try { await api('DELETE', '/admin/schedules?key=' + encodeURIComponent(key)); toast('Schedule removed'); loadSchedules() }
+  catch (e) { toast(e.message, true) }
+})
 
 $('#saveToken').onclick = () => {
   token = $('#token').value.trim()
