@@ -77,6 +77,7 @@ const DASHBOARD_HTML = /* html */ `<!doctype html>
     background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
     padding: 12px; overflow-x: auto; font-size: 12px; margin: 8px 0 0; white-space: pre;
   }
+  .tg { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
   .snip-head { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
   .snip-head span { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
   .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: flex-start; justify-content: center; padding: 40px 16px; z-index: 10; overflow-y: auto; }
@@ -251,6 +252,22 @@ function renderProjects(list) {
       <div class="snip-head"><span>Paste into your Nuxt app</span>
         <button class="ghost" data-snip style="padding:3px 10px;font-size:11px">Copy config</button></div>
       <pre data-snippet>\${esc(snippet(p.publicKey))}</pre>
+
+      <div class="tg">
+        <div class="snip-head"><span>Telegram notifications</span>
+          \${p.telegramConfigured ? '' : '<span class="muted" style="font-size:11px;text-transform:none">bot not set up on server</span>'}</div>
+        <div class="muted" style="font-size:11px;margin:2px 0 8px">
+          Add the bot to your chat/group, then paste the chat id. New errors get pushed there.
+        </div>
+        <div class="row" style="align-items:center">
+          <div style="flex:2"><label>Chat id</label>
+            <input type="text" data-tg-chat placeholder="e.g. -1001234567890" value="\${esc(p.telegramChatId || '')}" /></div>
+          <label style="display:flex;align-items:center;gap:6px;flex:0 0 auto;margin-top:16px">
+            <input type="checkbox" data-tg-enabled \${p.telegramEnabled ? 'checked' : ''} style="width:auto" /> Enabled</label>
+          <div style="flex:0 0 auto;margin-top:16px"><button class="ghost" data-tg-save>Save</button></div>
+          <div style="flex:0 0 auto;margin-top:16px"><button class="ghost" data-tg-test>Send test</button></div>
+        </div>
+      </div>
     </div>\`
   }).join('')
 }
@@ -276,15 +293,26 @@ $('#create').onclick = async () => {
   } catch (e) { toast(e.message, true) }
 }
 
-$('#projects').addEventListener('click', (ev) => {
+$('#projects').addEventListener('click', async (ev) => {
   const btn = ev.target.closest('button'); if (!btn) return
   const card = btn.closest('.proj')
+  const key = card.dataset.key
   if (btn.dataset.copy !== undefined) {
     navigator.clipboard.writeText(btn.dataset.copy).then(() => toast('Key copied'))
   } else if (btn.hasAttribute('data-snip')) {
     navigator.clipboard.writeText(card.querySelector('[data-snippet]').textContent).then(() => toast('Config copied'))
   } else if (btn.hasAttribute('data-logs')) {
-    openLogs(card.dataset.key, btn.dataset.name)
+    openLogs(key, btn.dataset.name)
+  } else if (btn.hasAttribute('data-tg-save')) {
+    const telegramChatId = card.querySelector('[data-tg-chat]').value.trim()
+    const telegramEnabled = card.querySelector('[data-tg-enabled]').checked
+    try { await api('PATCH', '/account/projects/' + encodeURIComponent(key), { telegramChatId, telegramEnabled }); toast('Telegram saved') }
+    catch (e) { toast(e.message, true) }
+  } else if (btn.hasAttribute('data-tg-test')) {
+    try {
+      const r = await api('POST', '/account/projects/' + encodeURIComponent(key) + '/telegram/test')
+      toast(r.ok ? 'Test sent ✅' : ('Test failed: ' + (r.reason || 'unknown')), !r.ok)
+    } catch (e) { toast(e.message, true) }
   }
 })
 

@@ -6,6 +6,7 @@ import { DatabaseModule } from './database/database.module'
 import { IngestModule } from './ingest/ingest.module'
 import { JiraModule } from './jira/jira.module'
 import { MaintenanceModule } from './maintenance/maintenance.module'
+import { TelegramModule } from './telegram/telegram.module'
 import { ProjectsModule } from './projects/projects.module'
 
 @Module({
@@ -20,6 +21,7 @@ import { ProjectsModule } from './projects/projects.module'
     AdminModule,
     AuthModule,
     MaintenanceModule,
+    TelegramModule,
   ],
 })
 export class AppModule {}

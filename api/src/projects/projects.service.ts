@@ -18,6 +18,8 @@ export interface Project {
   jira_email: string | null
   jira_api_token_encrypted: string | null
   jira_project_key: string | null
+  telegram_chat_id: string | null
+  telegram_enabled: boolean
 }
 
 export interface ErrorRow {
@@ -105,6 +107,8 @@ export class ProjectsService {
       allowedOrigins?: string[]
       isActive?: boolean
       rateLimitPerMinute?: number
+      telegramChatId?: string | null
+      telegramEnabled?: boolean
     },
   ): Promise<Project | null> {
     const dbPatch: Record<string, unknown> = {}
@@ -114,6 +118,10 @@ export class ProjectsService {
       dbPatch.rate_limit_per_minute = patch.rateLimitPerMinute
     if (patch.allowedOrigins !== undefined)
       dbPatch.allowed_origins = JSON.stringify(patch.allowedOrigins)
+    if (patch.telegramChatId !== undefined)
+      dbPatch.telegram_chat_id = patch.telegramChatId || null
+    if (patch.telegramEnabled !== undefined)
+      dbPatch.telegram_enabled = patch.telegramEnabled
 
     const [project] = await this.db('projects')
       .where({ public_key: publicKey })

@@ -12,8 +12,15 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common'
-import { IsArray, IsOptional, IsString, MaxLength } from 'class-validator'
+import {
+  IsArray,
+  IsBoolean,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator'
 import { ProjectsService } from '../projects/projects.service'
+import { TelegramService } from '../telegram/telegram.service'
 import { type AuthedRequest, AuthGuard } from './auth.guard'
 
 class CreateProjectDto {
@@ -37,6 +44,15 @@ class UpdateProjectDto {
   @IsArray()
   @IsString({ each: true })
   allowedOrigins?: string[]
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  telegramChatId?: string
+
+  @IsOptional()
+  @IsBoolean()
+  telegramEnabled?: boolean
 }
 
 // Self-service project + error management for the signed-in user. Every route
@@ -44,11 +60,15 @@ class UpdateProjectDto {
 @Controller('account')
 @UseGuards(AuthGuard)
 export class AccountController {
-  constructor(private readonly projects: ProjectsService) {}
+  constructor(
+    private readonly projects: ProjectsService,
+    private readonly telegram: TelegramService,
+  ) {}
 
   @Get('projects')
   async list(@Req() req: AuthedRequest) {
     const rows = await this.projects.listByUser(req.user.id)
+    const telegramConfigured = this.telegram.isConfigured()
     return rows.map((p) => ({
       id: p.id,
       name: p.name,
@@ -56,6 +76,11 @@ export class AccountController {
       isActive: p.is_active,
       rateLimitPerMinute: p.rate_limit_per_minute,
       allowedOrigins: p.allowed_origins,
+      telegramChatId: p.telegram_chat_id,
+      telegramEnabled: p.telegram_enabled,
+      // Whether the platform bot itself is set up (env). If false, the client's
+      // chat id can't receive anything yet — surfaced so the UI can explain.
+      telegramConfigured,
     }))
   }
 
@@ -88,6 +113,37 @@ export class AccountController {
       publicKey: project.public_key,
       isActive: project.is_active,
       allowedOrigins: project.allowed_origins,
+      telegramChatId: project.telegram_chat_id,
+      telegramEnabled: project.telegram_enabled,
+    }
+  }
+
+  /** Send a test message to the project's Telegram chat to verify wiring. */
+  @Post('projects/:publicKey/telegram/test')
+  async telegramTest(
+    @Req() req: AuthedRequest,
+    @Param('publicKey') publicKey: string,
+  ) {
+    const project = await this.projects.findOwned(publicKey, req.user.id)
+    if (!project) throw new ForbiddenException('Not your project')
+    if (!this.telegram.isConfigured()) {
+      return { ok: false, reason: 'Telegram bot not configured on the server' }
+    }
+    if (!project.telegram_chat_id) {
+      return { ok: false, reason: 'No chat id set' }
+    }
+    const sent = await this.telegram.sendMessage(
+      project.telegram_chat_id,
+      this.telegram.formatNewError({
+        projectName: project.name,
+        level: 'info',
+        source: 'test',
+        message: 'Test notification — Telegram is wired up correctly ✅',
+      }),
+    )
+    return {
+      ok: sent,
+      reason: sent ? undefined : 'Telegram API rejected the message',
     }
   }
 
