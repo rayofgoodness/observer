@@ -12,6 +12,15 @@ export interface ModuleOptions {
   enabled?: boolean
   /** Wrap window.fetch to capture failed requests (network errors + 5xx). Default true. */
   captureFetch?: boolean
+  /**
+   * On a failed request (HTTP >= 400 or a network error), attach full request/
+   * response detail (method, url, status, timing, headers, bodies) to the fetch
+   * breadcrumb's `data` for precise debugging. Sensitive headers (authorization/
+   * cookie/…) are redacted; bodies are truncated. Only failed requests carry
+   * detail — successful ones stay lightweight. Default true; set false to keep
+   * fetch breadcrumbs message-only (e.g. to avoid capturing request payloads).
+   */
+  captureFetchDetails?: boolean
   /** Patch console.error to capture logged-but-not-thrown errors. Default true. */
   captureConsole?: boolean
   /**
@@ -47,6 +56,7 @@ export default defineNuxtModule<ModuleOptions>({
     appVersion: 'unknown',
     enabled: true,
     captureFetch: true,
+    captureFetchDetails: true,
     captureConsole: true,
     captureInputs: false,
     flushDelay: 2000,
@@ -62,6 +72,7 @@ export default defineNuxtModule<ModuleOptions>({
       publicKey: options.publicKey,
       appVersion: options.appVersion ?? 'unknown',
       captureFetch: options.captureFetch !== false,
+      captureFetchDetails: options.captureFetchDetails !== false,
       captureConsole: options.captureConsole !== false,
       captureInputs: options.captureInputs === true,
       flushDelay: posInt(options.flushDelay, 2000),

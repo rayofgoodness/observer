@@ -279,21 +279,129 @@ export default defineNuxtPlugin((nuxtApp) => {
   // network errors). Skips our own ingest calls to avoid a capture→flush loop.
   if (config.captureFetch && typeof window.fetch === 'function') {
     const originalFetch = window.fetch.bind(window)
+
+    // Detail capture (opt-out via captureFetchDetails): on a FAILED request we
+    // attach full request/response detail to the breadcrumb's `data` so the
+    // console shows exactly what was sent and returned. Successful requests stay
+    // message-only — attaching detail to all of them would blow the 16 KB
+    // server-side trail cap and leak more data than needed.
+    const REDACTED = '[redacted]'
+    const SENSITIVE_HEADER =
+      /^(authorization|cookie|set-cookie|proxy-authorization|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token)$/i
+    const MAX_BODY = 2048
+    const MAX_HEADER_VAL = 256
+
+    const trunc = (s: string, max: number): string =>
+      s.length > max ? `${s.slice(0, max)}…[+${s.length - max}]` : s
+
+    const headersToObj = (
+      h: HeadersInit | Headers | undefined,
+    ): Record<string, string> => {
+      const out: Record<string, string> = {}
+      if (!h) return out
+      try {
+        const entries: Array<[string, string]> =
+          h instanceof Headers
+            ? [...h.entries()]
+            : Array.isArray(h)
+              ? (h as Array<[string, string]>)
+              : Object.entries(h as Record<string, string>)
+        for (const [k, v] of entries) {
+          out[k] = SENSITIVE_HEADER.test(k)
+            ? REDACTED
+            : trunc(String(v), MAX_HEADER_VAL)
+        }
+      } catch {
+        /* ignore malformed headers */
+      }
+      return out
+    }
+
+    const reqHeaders = (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ): Record<string, string> => {
+      const base = input instanceof Request ? headersToObj(input.headers) : {}
+      return { ...base, ...headersToObj(init?.headers) }
+    }
+
+    const readReqBody = async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ): Promise<string | undefined> => {
+      try {
+        const body = init?.body
+        if (body != null) {
+          if (typeof body === 'string') return trunc(body, MAX_BODY)
+          if (body instanceof URLSearchParams)
+            return trunc(body.toString(), MAX_BODY)
+          if (typeof FormData !== 'undefined' && body instanceof FormData)
+            return '[FormData]'
+          if (typeof Blob !== 'undefined' && body instanceof Blob)
+            return `[Blob ${body.size}b]`
+          if (body instanceof ArrayBuffer)
+            return `[ArrayBuffer ${body.byteLength}b]`
+          return '[stream]'
+        }
+        // Body passed via a Request object (fetch(new Request(url, {body}))).
+        if (input instanceof Request) {
+          const t = await input.clone().text()
+          return t ? trunc(t, MAX_BODY) : undefined
+        }
+      } catch {
+        /* body unreadable (already consumed / stream) — skip */
+      }
+      return undefined
+    }
+
+    // res.clone() so reading the body here never consumes the caller's response.
+    const readResBody = async (res: Response): Promise<string | undefined> => {
+      try {
+        const ct = res.headers.get('content-type') ?? ''
+        if (!/json|text|xml|form-urlencoded/i.test(ct))
+          return `[${ct || 'binary'}]`
+        const len = Number(res.headers.get('content-length') ?? 0)
+        if (len > MAX_BODY * 8) return `[too large ${len}b]`
+        const t = await res.clone().text()
+        return t ? trunc(t, MAX_BODY) : undefined
+      } catch {
+        /* body unreadable — skip */
+      }
+      return undefined
+    }
+
     window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const method = (
         init?.method ?? (input instanceof Request ? input.method : 'GET')
       ).toUpperCase()
       const reqUrl = input instanceof Request ? input.url : String(input)
       const isOwn = reqUrl.startsWith(config.endpoint)
+      const startedAt = Date.now()
 
       try {
         const res = await originalFetch(input, init)
         if (!isOwn) {
+          const failed = res.status >= 400
+          let data: Record<string, unknown> | undefined
+          if (failed && config.captureFetchDetails) {
+            data = {
+              method,
+              url: reqUrl,
+              status: res.status,
+              statusText: res.statusText,
+              durationMs: Date.now() - startedAt,
+              requestHeaders: reqHeaders(input, init),
+              requestBody: await readReqBody(input, init),
+              responseHeaders: headersToObj(res.headers),
+              responseBody: await readResBody(res),
+            }
+          }
           addCrumb({
             type: 'fetch',
             category: 'http',
-            level: res.status >= 400 ? 'error' : 'info',
+            level: failed ? 'error' : 'info',
             message: `${method} ${reqUrl} → ${res.status}`,
+            data,
           })
           if (res.status >= 500) {
             capture(
@@ -311,6 +419,16 @@ export default defineNuxtPlugin((nuxtApp) => {
             category: 'http',
             level: 'error',
             message: `${method} ${reqUrl} → failed: ${reason}`,
+            data: config.captureFetchDetails
+              ? {
+                  method,
+                  url: reqUrl,
+                  error: reason,
+                  durationMs: Date.now() - startedAt,
+                  requestHeaders: reqHeaders(input, init),
+                  requestBody: await readReqBody(input, init),
+                }
+              : undefined,
           })
           capture(
             new Error(`Fetch failed ${method} ${reqUrl}: ${reason}`),

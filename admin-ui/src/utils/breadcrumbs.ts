@@ -3,6 +3,7 @@ export interface Crumb {
   category?: string
   message?: string
   timestamp?: string | number
+  data?: Record<string, unknown>
 }
 
 export interface ParsedCrumb {
@@ -11,6 +12,8 @@ export interface ParsedCrumb {
   category: string
   text: string
   badges: string[]
+  // Structured detail (failed-fetch request/response) shown on expand.
+  detail?: Record<string, unknown>
 }
 
 // Click breadcrumbs embed data-* attrs as "[data-x=y data-z=w]" inside the
@@ -29,5 +32,9 @@ export function parseCrumb(c: Crumb): ParsedCrumb {
         .replace(/\s{2,}/g, ' ')
         .trim()
     : raw
-  return { type, time, category: c.category || type, text, badges }
+  const detail =
+    c.data && typeof c.data === 'object' && Object.keys(c.data).length
+      ? c.data
+      : undefined
+  return { type, time, category: c.category || type, text, badges, detail }
 }
