@@ -375,4 +375,7 @@ payloads or response bodies leaving the browser at all.
 
 ## License
 
-MIT
+[PolyForm Shield 1.0.0](./LICENSE) — source-available. Free to install and use
+for any purpose **except** building a product that competes with this software or
+with what the licensor offers using it. You may not fork it into a rival. Full
+terms in [`LICENSE`](./LICENSE); copyright remains with the author.
