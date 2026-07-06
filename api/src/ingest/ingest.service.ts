@@ -57,11 +57,21 @@ export class IngestService {
           ? { truncated: true }
           : effectiveDevice
 
-      // Cap the breadcrumb trail server-side (mirrors device): drop it entirely
-      // if abnormally large rather than bloating the row.
-      const breadcrumbs = item.breadcrumbs ?? []
+      // Cap the breadcrumb trail server-side. Fetch crumbs now carry full
+      // request/response detail, so instead of dropping the whole trail when
+      // it's large, shed the OLDEST crumbs (furthest from the error, least
+      // relevant) until it fits — the most recent context always survives.
+      const CRUMB_CAP = 32768
+      let breadcrumbs = item.breadcrumbs ?? []
+      while (
+        breadcrumbs.length > 1 &&
+        JSON.stringify(breadcrumbs).length > CRUMB_CAP
+      ) {
+        breadcrumbs = breadcrumbs.slice(1)
+      }
+      // A lone crumb still over cap (one huge body) — replace with a marker.
       const safeBreadcrumbs =
-        JSON.stringify(breadcrumbs).length > 16384
+        JSON.stringify(breadcrumbs).length > CRUMB_CAP
           ? [{ type: 'truncated', message: 'breadcrumbs too large' }]
           : breadcrumbs
 
