@@ -49,6 +49,22 @@ export class TelegramService {
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   }
 
+  /** Escape for use inside a double-quoted HTML attribute (href). */
+  private escAttr(s: string): string {
+    return this.esc(s).replace(/"/g, '&quot;')
+  }
+
+  /** Format a Kyiv-local timestamp (uk-UA), tolerant of invalid input. */
+  private fmtTime(at: string | Date): string {
+    const d = at instanceof Date ? at : new Date(at)
+    if (Number.isNaN(d.getTime())) return ''
+    return new Intl.DateTimeFormat('uk-UA', {
+      dateStyle: 'short',
+      timeStyle: 'medium',
+      timeZone: 'Europe/Kyiv',
+    }).format(d)
+  }
+
   /** Format a new-error notification. */
   formatNewError(input: {
     projectName: string
@@ -57,6 +73,7 @@ export class TelegramService {
     message: string
     url?: string
     occurrencesCount?: number
+    occurredAt?: string | Date
   }): string {
     const emoji =
       input.level === 'fatal' || input.level === 'error'
@@ -70,8 +87,14 @@ export class TelegramService {
       `<b>${this.esc(input.message.slice(0, 400))}</b>`,
       `<i>source:</i> ${this.esc(input.source)}`,
     ]
-    if (input.url)
-      lines.push(`<i>url:</i> ${this.esc(input.url.slice(0, 300))}`)
+    if (input.url) {
+      const u = input.url.slice(0, 300)
+      lines.push(`<i>url:</i> <a href="${this.escAttr(u)}">${this.esc(u)}</a>`)
+    }
+    if (input.occurredAt) {
+      const t = this.fmtTime(input.occurredAt)
+      if (t) lines.push(`<i>time:</i> ${this.esc(t)}`)
+    }
     return lines.join('\n')
   }
 }

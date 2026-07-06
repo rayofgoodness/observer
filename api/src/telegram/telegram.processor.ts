@@ -15,6 +15,8 @@ interface UnsentRow {
   level: string | null
   source: string | null
   occurrences_count: number
+  last_seen: Date | string
+  url: string | null
   project_name: string
   telegram_chat_id: string
 }
@@ -52,6 +54,14 @@ export class TelegramProcessor extends WorkerHost {
         'e.level as level',
         'e.source as source',
         'e.occurrences_count as occurrences_count',
+        'e.last_seen as last_seen',
+        // URL of the most recent occurrence of this error group.
+        this.db('error_occurrences as o')
+          .select('o.url')
+          .whereRaw('o.error_id = e.id')
+          .orderBy('o.occurred_at', 'desc')
+          .limit(1)
+          .as('url'),
         'p.name as project_name',
         'p.telegram_chat_id as telegram_chat_id',
       )
@@ -67,6 +77,8 @@ export class TelegramProcessor extends WorkerHost {
         source: row.source ?? 'unknown',
         message: row.message ?? '',
         occurrencesCount: row.occurrences_count,
+        url: row.url ?? undefined,
+        occurredAt: row.last_seen,
       })
       const ok = await this.telegram.sendMessage(row.telegram_chat_id, html)
       if (ok) sentIds.push(row.id)
