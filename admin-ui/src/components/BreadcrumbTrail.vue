@@ -5,6 +5,7 @@ import { type Crumb, parseCrumb } from '../utils/breadcrumbs'
 const props = defineProps<{
   crumbs: Crumb[]
   emptyText?: string
+  subtitle?: string
 }>()
 
 const parsed = computed(() => props.crumbs.map(parseCrumb))
@@ -59,7 +60,7 @@ function formatDetail(d: Record<string, unknown>): string {
   <template v-if="parsed.length">
     <h2 style="margin-top: 16px">
       User trail before error
-      <span class="muted" style="font-weight: 400; text-transform: none">· latest occurrence</span>
+      <span class="muted" style="font-weight: 400; text-transform: none">· {{ subtitle || 'latest occurrence' }}</span>
     </h2>
     <ul class="crumbs">
       <li v-for="(c, i) in parsed" :key="i" class="crumb" :class="c.type">

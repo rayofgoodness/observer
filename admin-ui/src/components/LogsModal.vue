@@ -88,6 +88,12 @@ async function openDetail(id: number) {
     )
     detail.error = d.error
     detail.occurrences = d.occurrences || []
+    // Prefer the newest occurrence that actually carries breadcrumbs, so the
+    // trail isn't empty just because the very latest hit recorded none.
+    const withCrumbs = detail.occurrences.findIndex(
+      (o) => (o.breadcrumbs?.length ?? 0) > 0,
+    )
+    selectedOcc.value = withCrumbs >= 0 ? withCrumbs : 0
   } catch (e) {
     toast((e as Error).message, true)
     view.value = 'list'
@@ -128,7 +134,17 @@ function backToList() {
   view.value = 'list'
 }
 
-const crumbs = computed<Crumb[]>(() => detail.occurrences[0]?.breadcrumbs || [])
+// Which occurrence's trail is shown. Defaults to the latest (0); clicking a row
+// in "Recent occurrences" switches it, so details saved on any occurrence — not
+// just the newest — are viewable.
+const selectedOcc = ref(0)
+const crumbs = computed<Crumb[]>(
+  () => detail.occurrences[selectedOcc.value]?.breadcrumbs || [],
+)
+const trailLabel = computed(() => {
+  const o = detail.occurrences[selectedOcc.value]
+  return o ? fmtDate(o.occurred_at) : ''
+})
 const from = computed(() => (list.total ? list.offset + 1 : 0))
 const to = computed(() => Math.min(list.offset + PAGE_SIZE.value, list.total))
 
@@ -229,22 +245,41 @@ function onOverlayClick(e: MouseEvent) {
         <div style="font-weight: 600; margin-bottom: 2px">{{ detail.error.message }}</div>
         <pre>{{ detail.error.stack || '(no stack)' }}</pre>
 
-        <BreadcrumbTrail :crumbs="crumbs" empty-text="No breadcrumbs recorded for this occurrence." />
+        <BreadcrumbTrail
+          :crumbs="crumbs"
+          :subtitle="trailLabel"
+          empty-text="No breadcrumbs recorded for this occurrence."
+        />
 
-        <h2 style="margin-top: 16px">Recent occurrences</h2>
+        <h2 style="margin-top: 16px">
+          Recent occurrences
+          <span class="muted" style="font-weight: 400; text-transform: none; font-size: 12px">
+            · click a row to view its trail
+          </span>
+        </h2>
         <table>
           <thead>
             <tr>
-              <th>When</th><th>Route</th><th v-if="advanced">User</th><th>App ver</th>
+              <th>When</th><th>Route</th><th v-if="advanced">User</th><th>App ver</th><th>Trail</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-if="!detail.occurrences.length"><td colspan="4" class="empty">No occurrences.</td></tr>
-            <tr v-for="(o, i) in detail.occurrences" :key="i">
+            <tr v-if="!detail.occurrences.length"><td colspan="5" class="empty">No occurrences.</td></tr>
+            <tr
+              v-for="(o, i) in detail.occurrences"
+              :key="i"
+              class="occ-row"
+              :class="{ active: i === selectedOcc }"
+              @click="selectedOcc = i"
+            >
               <td class="muted" style="font-size: 12px">{{ fmtDate(o.occurred_at) }}</td>
               <td style="font-size: 12px">{{ o.route || '—' }}</td>
               <td v-if="advanced" class="muted" style="font-size: 12px">{{ o.user_id || '—' }}</td>
               <td class="muted" style="font-size: 12px">{{ o.app_version || '—' }}</td>
+              <td style="font-size: 12px">
+                <span v-if="o.breadcrumbs?.length" class="crumb-count">{{ o.breadcrumbs.length }}</span>
+                <span v-else class="muted">—</span>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -252,3 +287,24 @@ function onOverlayClick(e: MouseEvent) {
     </div>
   </div>
 </template>
+
+<style scoped>
+.occ-row {
+  cursor: pointer;
+}
+.occ-row:hover {
+  background: rgba(127, 127, 127, 0.08);
+}
+.occ-row.active {
+  background: rgba(99, 102, 241, 0.14);
+}
+.crumb-count {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  text-align: center;
+  font-size: 11px;
+  background: rgba(99, 102, 241, 0.18);
+}
+</style>
