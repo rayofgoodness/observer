@@ -13,12 +13,11 @@ export interface ModuleOptions {
   /** Wrap window.fetch to capture failed requests (network errors + 5xx). Default true. */
   captureFetch?: boolean
   /**
-   * On a failed request (HTTP >= 400 or a network error), attach full request/
-   * response detail (method, url, status, timing, headers, bodies) to the fetch
-   * breadcrumb's `data` for precise debugging. Sensitive headers (authorization/
-   * cookie/…) are redacted; bodies are truncated. Only failed requests carry
-   * detail — successful ones stay lightweight. Default true; set false to keep
-   * fetch breadcrumbs message-only (e.g. to avoid capturing request payloads).
+   * Attach full request/response detail (method, url, status, timing, headers,
+   * request payload, response body) to every fetch breadcrumb's `data` for
+   * precise debugging. Sensitive headers (authorization/cookie/…) are redacted;
+   * bodies are truncated. Default true; set false to keep fetch breadcrumbs
+   * message-only (e.g. to avoid capturing request payloads / PII).
    */
   captureFetchDetails?: boolean
   /** Patch console.error to capture logged-but-not-thrown errors. Default true. */

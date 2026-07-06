@@ -280,11 +280,10 @@ export default defineNuxtPlugin((nuxtApp) => {
   if (config.captureFetch && typeof window.fetch === 'function') {
     const originalFetch = window.fetch.bind(window)
 
-    // Detail capture (opt-out via captureFetchDetails): on a FAILED request we
-    // attach full request/response detail to the breadcrumb's `data` so the
-    // console shows exactly what was sent and returned. Successful requests stay
-    // message-only — attaching detail to all of them would blow the 16 KB
-    // server-side trail cap and leak more data than needed.
+    // Detail capture (opt-out via captureFetchDetails): attach full request/
+    // response detail to every fetch breadcrumb's `data` so the console shows
+    // exactly what was sent and returned. Bodies are truncated and the server
+    // sheds oldest crumbs to stay under its trail cap.
     const REDACTED = '[redacted]'
     const SENSITIVE_HEADER =
       /^(authorization|cookie|set-cookie|proxy-authorization|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token)$/i
@@ -383,7 +382,9 @@ export default defineNuxtPlugin((nuxtApp) => {
         if (!isOwn) {
           const failed = res.status >= 400
           let data: Record<string, unknown> | undefined
-          if (failed && config.captureFetchDetails) {
+          // Record full request/response detail for every request (not just
+          // failures) so the trail carries the payload/body/response of each.
+          if (config.captureFetchDetails) {
             data = {
               method,
               url: reqUrl,
