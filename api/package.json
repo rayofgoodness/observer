@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "start:dev": "nest start --watch",
+    "start:dev": "kill $(lsof -ti tcp:${PORT:-3040}) 2>/dev/null; nest start --watch",
     "build": "nest build",
-    "start:prod": "node dist/main.js",
+    "start:prod": "kill $(lsof -ti tcp:${PORT:-3040}) 2>/dev/null; node dist/main.js",
     "migrate": "bun --env-file=.env node_modules/.bin/knex migrate:latest",
     "test": "vitest run",
     "test:watch": "vitest"
