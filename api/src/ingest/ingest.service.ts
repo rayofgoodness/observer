@@ -12,7 +12,6 @@ export class IngestService {
   constructor(
     @Inject(KNEX) private readonly db: Knex,
     @InjectQueue('jira-tasks') private readonly jiraQueue: Queue,
-    @InjectQueue('notifications') private readonly notifyQueue: Queue,
   ) {}
 
   async process(project: Project, dto: IngestDto) {
@@ -83,28 +82,10 @@ export class IngestService {
       if (row.is_new) newErrorIds.push(row.id)
     }
 
-    // Telegram: notify the project's chat for each new error group (deduped by
-    // jobId so a burst of the same new error only pings once). Fire-and-forget —
-    // the processor no-ops if telegram is disabled/unconfigured.
-    if (
-      newErrorIds.length &&
-      project.telegram_enabled &&
-      project.telegram_chat_id
-    ) {
-      await Promise.all(
-        newErrorIds.map((id) =>
-          this.notifyQueue.add(
-            'new-error',
-            { errorId: id, projectId: project.id },
-            {
-              jobId: `tg-error-${id}`,
-              attempts: 3,
-              backoff: { type: 'exponential', delay: 3000 },
-            },
-          ),
-        ),
-      )
-    }
+    // Telegram: new error groups are inserted with is_sended = false (DB
+    // default) and picked up by the per-minute flush job (TelegramProcessor).
+    // Re-seen groups keep their existing is_sended, so already-sent errors never
+    // re-notify. No enqueue here — the flush job owns delivery.
 
     if (newErrorIds.length && project.ai_jira_enabled) {
       await Promise.all(

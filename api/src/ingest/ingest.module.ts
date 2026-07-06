@@ -5,11 +5,7 @@ import { IngestController } from './ingest.controller'
 import { IngestService } from './ingest.service'
 
 @Module({
-  imports: [
-    BullModule.registerQueue({ name: 'jira-tasks' }),
-    BullModule.registerQueue({ name: 'notifications' }),
-    ProjectsModule,
-  ],
+  imports: [BullModule.registerQueue({ name: 'jira-tasks' }), ProjectsModule],
   controllers: [IngestController],
   providers: [IngestService],
 })
