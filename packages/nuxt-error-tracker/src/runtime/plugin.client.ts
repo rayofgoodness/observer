@@ -161,8 +161,20 @@ export default defineNuxtPlugin((nuxtApp) => {
 
   // dataset keys are camelCased by the DOM (data-user-id → userId); render them
   // back to the real kebab attribute name. Cap count + value length.
+  // event.target is the deepest node (a <span>/<svg> inside a button), whose
+  // dataset is usually empty — the data-* attrs sit on the clickable ancestor.
+  // Walk up (bounded) to the nearest element that actually carries data-*.
   const formatDataAttrs = (el: Element): string => {
-    const dataset = (el as HTMLElement).dataset
+    let node: Element | null = el
+    let dataset: DOMStringMap | undefined
+    for (let depth = 0; node && depth < 5; depth++) {
+      const ds = (node as HTMLElement).dataset
+      if (ds && Object.keys(ds).length > 0) {
+        dataset = ds
+        break
+      }
+      node = node.parentElement
+    }
     if (!dataset) return ''
     return Object.entries(dataset)
       .slice(0, 5)
