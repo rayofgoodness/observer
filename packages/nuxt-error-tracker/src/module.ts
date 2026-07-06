@@ -28,8 +28,34 @@ export interface ModuleOptions {
    * masked. Default false — opt in, since it can capture user-entered data.
    */
   captureInputs?: boolean
-  /** Debounce before a batch is flushed, in ms. Default 2000. */
+  /**
+   * How often batches leave the browser (debounce before a flush), in ms.
+   * A flush is scheduled `flushDelay` after the first queued error; more errors
+   * arriving in that window ride the same batch. Default 2000.
+   */
   flushDelay?: number
+  /**
+   * Floor on the spacing between consecutive flushes, in ms. Unlike `flushDelay`
+   * (a per-batch debounce), this throttles the *rate* of network requests during
+   * a sustained error storm: a flush never fires sooner than `minFlushInterval`
+   * after the previous one. Default 0 (off — `flushDelay` alone governs cadence).
+   */
+  minFlushInterval?: number
+  /**
+   * Client-side sampling: fraction (0..1) of captured errors to actually send;
+   * the rest are dropped before they ever queue. 1 = send everything (default),
+   * 0.3 = keep ~30%. Thins volume at the source so a high-traffic app doesn't
+   * flood the per-project server rate limit. Applied per occurrence, before the
+   * per-session dedup — so with a low rate even a rare error may be dropped.
+   */
+  sampleRate?: number
+  /**
+   * Client-side hard cap on errors *queued* per rolling minute (fixed window);
+   * anything over is dropped. Mirrors the server's per-project rate limit so the
+   * browser stops emitting instead of shipping batches that get rejected.
+   * Default 0 (off — unlimited).
+   */
+  maxPerMinute?: number
   /** Max occurrences of the same error captured per session. Default 5. */
   maxPerSession?: number
   /** Max errors per flushed batch. Default 20 (server also caps at 20). */
@@ -42,6 +68,18 @@ export interface ModuleOptions {
 function posInt(value: unknown, fallback: number): number {
   const n = Number(value)
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback
+}
+
+// Coerce to a 0..1 fraction (env provides strings), else fallback.
+function clamp01(value: unknown, fallback: number): number {
+  const n = Number(value)
+  return Number.isFinite(n) ? Math.min(Math.max(n, 0), 1) : fallback
+}
+
+// Coerce to a non-negative integer (0 = disabled), else fallback.
+function nonNegInt(value: unknown, fallback: number): number {
+  const n = Number(value)
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : fallback
 }
 
 export default defineNuxtModule<ModuleOptions>({
@@ -59,6 +97,9 @@ export default defineNuxtModule<ModuleOptions>({
     captureConsole: true,
     captureInputs: false,
     flushDelay: 2000,
+    minFlushInterval: 0,
+    sampleRate: 1,
+    maxPerMinute: 0,
     maxPerSession: 5,
     maxBatch: 20,
     maxBreadcrumbs: 30,
@@ -75,6 +116,9 @@ export default defineNuxtModule<ModuleOptions>({
       captureConsole: options.captureConsole !== false,
       captureInputs: options.captureInputs === true,
       flushDelay: posInt(options.flushDelay, 2000),
+      minFlushInterval: nonNegInt(options.minFlushInterval, 0),
+      sampleRate: clamp01(options.sampleRate, 1),
+      maxPerMinute: nonNegInt(options.maxPerMinute, 0),
       maxPerSession: posInt(options.maxPerSession, 5),
       // Server hard-caps batches at 20 — never emit larger, even if misconfigured.
       maxBatch: Math.min(posInt(options.maxBatch, 20), 20),

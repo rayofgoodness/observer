@@ -185,6 +185,9 @@ per environment (staging vs. production) without touching code.
 | `captureConsole`      | `boolean` | `true`      | Patch `console.error` to capture logged-but-not-thrown errors.     |
 | `captureInputs`       | `boolean` | `false`     | Record form input values as breadcrumbs (on change/blur). Sensitive fields masked. **Opt-in** — captures user-entered data. |
 | `flushDelay`          | `number`  | `2000`      | Debounce (ms) before a queued batch is sent.                       |
+| `minFlushInterval`    | `number`  | `0`         | Floor (ms) between consecutive flushes — throttles request rate during an error storm. `0` = off. |
+| `sampleRate`          | `number`  | `1`         | Fraction (0..1) of captured errors actually sent; the rest are dropped at capture. `0.3` ≈ keep 30%. Thins volume before the server rate limit. |
+| `maxPerMinute`        | `number`  | `0`         | Client-side cap on errors queued per rolling minute (fixed window); excess dropped. Mirrors the server per-project rate limit. `0` = unlimited. |
 | `maxPerSession`       | `number`  | `5`         | Max occurrences of the *same* error captured per session.          |
 | `maxBatch`            | `number`  | `20`        | Max errors per request (clamped to server hard cap of 20).         |
 | `maxBreadcrumbs`      | `number`  | `30`        | Breadcrumbs kept in the ring buffer / sent per error (clamped to 50). |

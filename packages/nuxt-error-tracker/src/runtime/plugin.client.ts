@@ -26,6 +26,9 @@ export default defineNuxtPlugin((nuxtApp) => {
   const route = useRoute()
 
   const FLUSH_DELAY = config.flushDelay ?? 2000
+  const MIN_FLUSH_INTERVAL = config.minFlushInterval ?? 0
+  const SAMPLE_RATE = config.sampleRate ?? 1
+  const MAX_PER_MINUTE = config.maxPerMinute ?? 0 // 0 = unlimited
   const MAX_PER_SESSION = config.maxPerSession ?? 5
   const MAX_BATCH = config.maxBatch ?? 20
   const MAX_CRUMBS = config.maxBreadcrumbs ?? 30
@@ -33,6 +36,23 @@ export default defineNuxtPlugin((nuxtApp) => {
   const queue: CapturedError[] = []
   const sessionCounts = new Map<string, number>()
   let flushTimer: ReturnType<typeof setTimeout> | null = null
+  // Timestamp of the last flush, so scheduleFlush can enforce MIN_FLUSH_INTERVAL.
+  let lastFlushAt = 0
+
+  // Fixed-window client rate limit: count errors queued in the current minute.
+  let rateWindowStart = 0
+  let rateWindowCount = 0
+  function rateLimited(): boolean {
+    if (!MAX_PER_MINUTE) return false
+    const now = Date.now()
+    if (now - rateWindowStart >= 60_000) {
+      rateWindowStart = now
+      rateWindowCount = 0
+    }
+    if (rateWindowCount >= MAX_PER_MINUTE) return true
+    rateWindowCount++
+    return false
+  }
 
   // --- Breadcrumbs: ring buffer of recent user actions, snapshotted at error time ---
   const crumbs: Crumb[] = []
@@ -68,6 +88,7 @@ export default defineNuxtPlugin((nuxtApp) => {
 
   function flush(useBeacon = false) {
     if (!queue.length) return
+    lastFlushAt = Date.now()
     // Fully defensive: nothing in the send path may throw into the host app —
     // flush runs from timers, visibilitychange, and the fetch wrapper.
     try {
@@ -113,10 +134,14 @@ export default defineNuxtPlugin((nuxtApp) => {
 
   function scheduleFlush() {
     if (flushTimer) return
+    // Debounce by FLUSH_DELAY, but never fire sooner than MIN_FLUSH_INTERVAL
+    // after the previous flush — throttles request rate during an error storm.
+    const sinceLast = Date.now() - lastFlushAt
+    const wait = Math.max(FLUSH_DELAY, MIN_FLUSH_INTERVAL - sinceLast)
     flushTimer = setTimeout(() => {
       flushTimer = null
       flush()
-    }, FLUSH_DELAY)
+    }, wait)
   }
 
   function capture(
@@ -128,9 +153,17 @@ export default defineNuxtPlugin((nuxtApp) => {
       const error = err instanceof Error ? err : new Error(String(err))
       if (error.message === 'Script error.') return
 
+      // Client-side sampling: drop a fraction of occurrences before anything
+      // else. Runs first so sampled-out errors don't consume session budget.
+      if (SAMPLE_RATE < 1 && Math.random() >= SAMPLE_RATE) return
+
       const key = sessionKey(error.message, error.stack ?? '')
       const count = sessionCounts.get(key) ?? 0
       if (count >= MAX_PER_SESSION) return
+
+      // Per-minute client cap: checked after session dedup (so it counts what
+      // would actually queue) and only mutates the session count once past it.
+      if (rateLimited()) return
       sessionCounts.set(key, count + 1)
 
       queue.push({

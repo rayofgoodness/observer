@@ -185,6 +185,9 @@ export default defineNuxtConfig({
 | `captureConsole`      | `boolean` | `true`      | Патчить `console.error`, щоб ловити залоговані-але-не-кинуті помилки. |
 | `captureInputs`       | `boolean` | `false`     | Записує значення полів форм як breadcrumbs (на change/blur). Чутливі поля маскуються. **Opt-in** — захоплює введені користувачем дані. |
 | `flushDelay`          | `number`  | `2000`      | Debounce (мс) перед відправкою черги-батча.                        |
+| `minFlushInterval`    | `number`  | `0`         | Мін. пауза (мс) між флашами — throttle частоти запитів під час шторму помилок. `0` = вимкнено. |
+| `sampleRate`          | `number`  | `1`         | Частка (0..1) захоплених помилок, що реально шлються; решта дропається при capture. `0.3` ≈ 30%. Ріже обʼєм до серверного rate limit. |
+| `maxPerMinute`        | `number`  | `0`         | Клієнтський ліміт помилок у чергу за rolling-хвилину (fixed window); понад — дроп. Дзеркалить серверний per-project rate limit. `0` = без ліміту. |
 | `maxPerSession`       | `number`  | `5`         | Макс. кількість occurrences *тієї самої* помилки за сесію.          |
 | `maxBatch`            | `number`  | `20`        | Макс. помилок на запит (обрізається серверним лімітом 20).         |
 | `maxBreadcrumbs`      | `number`  | `30`        | Breadcrumbs у ring buffer / на помилку (обрізається до 50).        |
