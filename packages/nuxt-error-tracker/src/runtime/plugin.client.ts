@@ -159,7 +159,9 @@ export default defineNuxtPlugin((nuxtApp) => {
 
   // --- Instrumentation feeding the breadcrumb trail ---
 
-  // Clicks: record the element (tag/id/class/short text) — never input values.
+  // Clicks: record the element (tag/id/class/data-*/short text) — never input
+  // values. data-* attributes (data-testid, data-action, …) make it clear what
+  // was actually clicked when tag/id/class are generic.
   document.addEventListener(
     'click',
     (event) => {
@@ -171,11 +173,23 @@ export default defineNuxtPlugin((nuxtApp) => {
         typeof el.className === 'string' && el.className
           ? `.${el.className.trim().split(/\s+/).slice(0, 2).join('.')}`
           : ''
+      // dataset keys are camelCased by the DOM (data-user-id → userId); render
+      // them back to the real kebab attribute name. Cap count + value length.
+      const dataset = (el as HTMLElement).dataset
+      const dataAttrs = dataset
+        ? Object.entries(dataset)
+            .slice(0, 5)
+            .map(
+              ([k, v]) =>
+                `data-${k.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`)}=${(v ?? '').slice(0, 40)}`,
+            )
+            .join(' ')
+        : ''
       const text = (el.textContent ?? '').trim().slice(0, 40)
       addCrumb({
         type: 'click',
         category: 'ui.click',
-        message: `${tag}${id}${cls}${text ? ` "${text}"` : ''}`,
+        message: `${tag}${id}${cls}${dataAttrs ? ` [${dataAttrs}]` : ''}${text ? ` "${text}"` : ''}`,
       })
     },
     { capture: true, passive: true },
