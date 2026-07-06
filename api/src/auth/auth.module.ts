@@ -10,5 +10,6 @@ import { DashboardUiController } from './dashboard-ui.controller'
   imports: [ProjectsModule, TelegramModule],
   controllers: [AuthController, AccountController, DashboardUiController],
   providers: [AuthService],
+  exports: [AuthService],
 })
 export class AuthModule {}
