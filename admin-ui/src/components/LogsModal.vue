@@ -33,7 +33,6 @@ const props = defineProps<{
   projectName: string
   // admin gets status filter tabs + status-change actions + pagination
   advanced?: boolean
-  authHeaders?: Record<string, string>
 }>()
 const emit = defineEmits<{ close: [] }>()
 
@@ -58,8 +57,6 @@ const detail = reactive<{ error: ErrorRow | null; occurrences: Occurrence[] }>({
   occurrences: [],
 })
 
-const headers = () => props.authHeaders ?? {}
-
 async function loadList() {
   loading.value = true
   try {
@@ -71,8 +68,6 @@ async function loadList() {
     const res = await api<{ items: ErrorRow[]; total: number }>(
       'GET',
       `${props.apiBase}/projects/${encodeURIComponent(props.projectKey)}/errors?${params}`,
-      undefined,
-      headers(),
     )
     list.items = res.items
     list.total = res.total
@@ -90,8 +85,6 @@ async function openDetail(id: number) {
     const d = await api<{ error: ErrorRow; occurrences: Occurrence[] }>(
       'GET',
       `${props.apiBase}/errors/${id}`,
-      undefined,
-      headers(),
     )
     detail.error = d.error
     detail.occurrences = d.occurrences || []
@@ -106,12 +99,7 @@ async function openDetail(id: number) {
 async function setStatus(status: string) {
   if (!detail.error) return
   try {
-    await api(
-      'PATCH',
-      `${props.apiBase}/errors/${detail.error.id}`,
-      { status },
-      headers(),
-    )
+    await api('PATCH', `${props.apiBase}/errors/${detail.error.id}`, { status })
     toast(`Status → ${status}`)
     openDetail(detail.error.id)
   } catch (e) {

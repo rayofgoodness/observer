@@ -71,6 +71,6 @@ export class AuthController {
   @Get('me')
   @UseGuards(AuthGuard)
   me(@Req() req: AuthedRequest) {
-    return { id: req.user.id, email: req.user.email }
+    return { id: req.user.id, email: req.user.email, role: req.user.role }
   }
 }

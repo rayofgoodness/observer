@@ -1,15 +1,23 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import AdminView from './views/AdminView.vue'
-import DashboardView from './views/DashboardView.vue'
+import { useAuth } from './composables/useAuth'
+import AuthView from './views/AuthView.vue'
+import HomeView from './views/HomeView.vue'
 
-// Served at the real URLs /admin and /dashboard (the API returns index.html for
-// both; assets load from /ui via ServeStaticModule). The /admin entry keeps its
-// server-side admin-role gate (AdminUiMiddleware) untouched.
+// Everything lives at '/' (HomeView renders the user's projects or, for admins,
+// the admin console — decided from /auth/me). Sign-in/registration is the only
+// thing at '/auth'. Unknown paths fold back to '/'.
 export const router = createRouter({
   history: createWebHistory('/'),
   routes: [
-    { path: '/', redirect: '/dashboard' },
-    { path: '/dashboard', component: DashboardView },
-    { path: '/admin', component: AdminView },
+    { path: '/auth', name: 'auth', component: AuthView },
+    { path: '/', name: 'home', component: HomeView },
+    { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
+})
+
+router.beforeEach(async (to) => {
+  const { state, fetchMe } = useAuth()
+  if (!state.ready) await fetchMe()
+  if (to.name !== 'auth' && !state.me) return { name: 'auth' }
+  if (to.name === 'auth' && state.me) return { name: 'home' }
 })

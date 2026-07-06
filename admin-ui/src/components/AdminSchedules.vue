@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { onMounted, ref } from 'vue'
 import { api } from '../api'
 import { toast } from '../composables/useToast'
 
@@ -10,26 +10,16 @@ interface Schedule {
   next?: string | number
 }
 
-const props = defineProps<{
-  authHeaders: Record<string, string>
-  token: string
-}>()
-
 const rows = ref<Schedule[]>([])
 const loadError = ref('')
 const cron = ref('0 3 * * *')
 const days = ref(7)
 
+// /admin/* authenticates with the admin-role session cookie (AdminGuard).
 async function load() {
-  if (!props.token) return
   loadError.value = ''
   try {
-    rows.value = await api<Schedule[]>(
-      'GET',
-      '/admin/schedules',
-      undefined,
-      props.authHeaders,
-    )
+    rows.value = await api<Schedule[]>('GET', '/admin/schedules')
   } catch (e) {
     loadError.value = (e as Error).message
   }
@@ -39,12 +29,10 @@ async function create() {
   if (!cron.value.trim() || !days.value)
     return toast('Cron and days required', true)
   try {
-    await api(
-      'POST',
-      '/admin/schedules',
-      { cron: cron.value.trim(), olderThanDays: Number(days.value) },
-      props.authHeaders,
-    )
+    await api('POST', '/admin/schedules', {
+      cron: cron.value.trim(),
+      olderThanDays: Number(days.value),
+    })
     toast('Schedule added')
     load()
   } catch (e) {
@@ -54,12 +42,9 @@ async function create() {
 
 async function runNow() {
   try {
-    await api(
-      'POST',
-      '/admin/schedules/run',
-      { olderThanDays: Number(days.value) || 7 },
-      props.authHeaders,
-    )
+    await api('POST', '/admin/schedules/run', {
+      olderThanDays: Number(days.value) || 7,
+    })
     toast(`Cleanup queued (${Number(days.value) || 7}d)`)
   } catch (e) {
     toast((e as Error).message, true)
@@ -68,12 +53,7 @@ async function runNow() {
 
 async function remove(key: string) {
   try {
-    await api(
-      'DELETE',
-      `/admin/schedules?key=${encodeURIComponent(key)}`,
-      undefined,
-      props.authHeaders,
-    )
+    await api('DELETE', `/admin/schedules?key=${encodeURIComponent(key)}`)
     toast('Schedule removed')
     load()
   } catch (e) {
@@ -85,7 +65,7 @@ function fmtNext(n: string | number | undefined) {
   return n ? new Date(n).toLocaleString() : '—'
 }
 
-watch(() => props.token, load, { immediate: true })
+onMounted(load)
 defineExpose({ load })
 </script>
 
@@ -114,7 +94,7 @@ defineExpose({ load })
       </thead>
       <tbody>
         <tr v-if="loadError"><td colspan="4" class="empty">{{ loadError }}</td></tr>
-        <tr v-else-if="!rows.length"><td colspan="4" class="empty">{{ token ? 'No schedules.' : 'Enter token to load.' }}</td></tr>
+        <tr v-else-if="!rows.length"><td colspan="4" class="empty">No schedules.</td></tr>
         <tr v-for="s in rows" :key="s.key">
           <td>{{ s.id || '—' }}</td>
           <td><code style="font-size: 12px">{{ s.cron || '—' }}</code></td>

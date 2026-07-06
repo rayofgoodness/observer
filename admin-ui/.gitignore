@@ -1,3 +1,7 @@
 node_modules
 dist
 *.tsbuildinfo
+# tsc emit from `vue-tsc -b` on vite.config.ts — Vite must use the .ts source,
+# and a stray vite.config.js would win over it and break the dev base URL.
+vite.config.js
+vite.config.d.ts

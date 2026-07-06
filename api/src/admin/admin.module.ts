@@ -1,25 +1,14 @@
-import {
-  type MiddlewareConsumer,
-  Module,
-  type NestModule,
-  RequestMethod,
-} from '@nestjs/common'
+import { Module } from '@nestjs/common'
 import { AuthModule } from '../auth/auth.module'
 import { MaintenanceModule } from '../maintenance/maintenance.module'
 import { ProjectsModule } from '../projects/projects.module'
 import { AdminController } from './admin.controller'
-import { AdminUiController } from './admin-ui.controller'
-import { AdminUiMiddleware } from './admin-ui.middleware'
 
+// AuthModule is imported so AdminGuard can resolve AuthService and authorize
+// admin-role sessions (in addition to the X-Admin-Token). The admin console
+// itself is now part of the SPA served at '/', not a separate HTML route.
 @Module({
   imports: [ProjectsModule, MaintenanceModule, AuthModule],
-  controllers: [AdminController, AdminUiController],
+  controllers: [AdminController],
 })
-export class AdminModule implements NestModule {
-  configure(consumer: MiddlewareConsumer): void {
-    // Only the HTML console page; the /admin/* API keeps AdminGuard.
-    consumer
-      .apply(AdminUiMiddleware)
-      .forRoutes({ path: 'admin', method: RequestMethod.GET })
-  }
-}
+export class AdminModule {}

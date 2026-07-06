@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { onMounted, ref } from 'vue'
 import { api } from '../api'
 import { toast } from '../composables/useToast'
 
@@ -12,13 +12,8 @@ interface AdminProject {
   allowedOrigins?: string[]
 }
 
-const props = defineProps<{
-  authHeaders: Record<string, string>
-  token: string
-}>()
 const emit = defineEmits<{
   logs: [key: string, name: string]
-  status: [ok: boolean, text: string]
 }>()
 
 const rows = ref<AdminProject[]>([])
@@ -28,26 +23,16 @@ const newOrigins = ref('')
 // local rate-limit edits keyed by publicKey
 const rate = ref<Record<string, number>>({})
 
+// All /admin/* calls authenticate with the admin-role session cookie (AdminGuard).
 async function load() {
-  if (!props.token) {
-    emit('status', false, 'no token')
-    return
-  }
   loadError.value = ''
   try {
-    rows.value = await api<AdminProject[]>(
-      'GET',
-      '/admin/projects',
-      undefined,
-      props.authHeaders,
-    )
+    rows.value = await api<AdminProject[]>('GET', '/admin/projects')
     rate.value = Object.fromEntries(
       rows.value.map((p) => [p.publicKey, p.rateLimitPerMinute]),
     )
-    emit('status', true, `${rows.value.length} project(s)`)
   } catch (e) {
     loadError.value = (e as Error).message
-    emit('status', false, (e as Error).message)
   }
 }
 
@@ -58,12 +43,10 @@ async function create() {
     .map((s) => s.trim())
     .filter(Boolean)
   try {
-    await api(
-      'POST',
-      '/admin/projects',
-      { name: newName.value.trim(), allowedOrigins },
-      props.authHeaders,
-    )
+    await api('POST', '/admin/projects', {
+      name: newName.value.trim(),
+      allowedOrigins,
+    })
     newName.value = ''
     newOrigins.value = ''
     toast('Created')
@@ -75,12 +58,9 @@ async function create() {
 
 async function saveRate(p: AdminProject) {
   try {
-    await api(
-      'PATCH',
-      `/admin/projects/${encodeURIComponent(p.publicKey)}`,
-      { rateLimitPerMinute: Number(rate.value[p.publicKey]) },
-      props.authHeaders,
-    )
+    await api('PATCH', `/admin/projects/${encodeURIComponent(p.publicKey)}`, {
+      rateLimitPerMinute: Number(rate.value[p.publicKey]),
+    })
     toast('Rate limit updated')
   } catch (e) {
     toast((e as Error).message, true)
@@ -89,12 +69,9 @@ async function saveRate(p: AdminProject) {
 
 async function toggle(p: AdminProject) {
   try {
-    await api(
-      'PATCH',
-      `/admin/projects/${encodeURIComponent(p.publicKey)}`,
-      { isActive: !p.isActive },
-      props.authHeaders,
-    )
+    await api('PATCH', `/admin/projects/${encodeURIComponent(p.publicKey)}`, {
+      isActive: !p.isActive,
+    })
     toast(p.isActive ? 'Deactivated' : 'Activated')
     load()
   } catch (e) {
@@ -107,8 +84,6 @@ async function flush(p: AdminProject) {
     await api(
       'POST',
       `/admin/projects/${encodeURIComponent(p.publicKey)}/flush-cache`,
-      undefined,
-      props.authHeaders,
     )
     toast('Cache flushed')
   } catch (e) {
@@ -120,8 +95,7 @@ function copyKey(key: string) {
   navigator.clipboard.writeText(key).then(() => toast('Copied'))
 }
 
-// Reload whenever a (new) token becomes available.
-watch(() => props.token, load, { immediate: true })
+onMounted(load)
 defineExpose({ load })
 </script>
 
@@ -154,7 +128,7 @@ defineExpose({ load })
           <td colspan="7" class="empty">{{ loadError }}</td>
         </tr>
         <tr v-else-if="!rows.length">
-          <td colspan="7" class="empty">{{ token ? 'No projects yet.' : 'Enter token to load.' }}</td>
+          <td colspan="7" class="empty">No projects yet.</td>
         </tr>
         <tr v-for="p in rows" :key="p.publicKey">
           <td class="muted">{{ p.id }}</td>

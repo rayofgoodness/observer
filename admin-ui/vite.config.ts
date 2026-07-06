@@ -12,7 +12,10 @@ export default defineConfig(({ command }) => ({
   server: {
     port: 5173,
     proxy: {
-      '/auth': 'http://localhost:3040',
+      // `^/auth/` (regex, trailing slash) proxies the API endpoints
+      // /auth/login|register|logout|me but NOT the bare /auth SPA route, which
+      // Vite serves via its history fallback.
+      '^/auth/': 'http://localhost:3040',
       '/account': 'http://localhost:3040',
       '/admin': 'http://localhost:3040',
       '/v1': 'http://localhost:3040',

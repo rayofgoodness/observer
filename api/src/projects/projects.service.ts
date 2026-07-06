@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { Inject, Injectable } from '@nestjs/common'
-import type { Knex } from 'knex'
 import type IORedis from 'ioredis'
+import type { Knex } from 'knex'
 import { encrypt } from '../common/crypto.util'
 import { KNEX, REDIS } from '../database/database.module'
 
