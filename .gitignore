@@ -10,3 +10,7 @@ dist/
 !.env.example
 CLAUDE.local.md
 .claude/settings.local.json
+
+# Пакетний менеджер — bun (bun.lock). pnpm-lock.yaml у packages/nuxt-error-tracker
+# комітиться навмисно (потрібен для nuxt-module-build), а npm тут не використовується.
+package-lock.json
