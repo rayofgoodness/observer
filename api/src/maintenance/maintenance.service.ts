@@ -1,5 +1,5 @@
 import { InjectQueue } from '@nestjs/bullmq'
-import { Injectable, type OnModuleInit } from '@nestjs/common'
+import { Injectable, Logger, type OnModuleInit } from '@nestjs/common'
 import type { Queue } from 'bullmq'
 import type { PurgeJobData } from './maintenance.processor'
 
@@ -18,19 +18,39 @@ export interface ScheduleInput {
 
 @Injectable()
 export class MaintenanceService implements OnModuleInit {
+  private readonly logger = new Logger(MaintenanceService.name)
+
   constructor(
     @InjectQueue('maintenance') private readonly queue: Queue<PurgeJobData>,
   ) {}
 
+  /**
+   * Seeding MUST NOT be awaited here. With Redis down, the BullMQ call parks in
+   * ioredis' offline queue forever, so `NestFactory.create` never resolves and
+   * `app.listen` is never reached — the port stays closed and the tunnel serves
+   * 502 instead of the app. Fire it off instead: ioredis reconnects on its own,
+   * and the queued command drains once Redis is back.
+   */
+  onModuleInit(): void {
+    void this.seedDefaultSchedule()
+  }
+
   /** Seed the default 7-day retention schedule once, if not already present. */
-  async onModuleInit(): Promise<void> {
-    const existing = await this.queue.getRepeatableJobs()
-    if (existing.some((j) => j.id === DEFAULT_JOB_ID)) return
-    await this.queue.add(
-      'purge-occurrences',
-      { olderThanDays: DEFAULT_RETENTION_DAYS, projectId: null },
-      { jobId: DEFAULT_JOB_ID, repeat: { pattern: DEFAULT_CRON } },
-    )
+  private async seedDefaultSchedule(): Promise<void> {
+    try {
+      const existing = await this.queue.getRepeatableJobs()
+      if (existing.some((j) => j.id === DEFAULT_JOB_ID)) return
+      await this.queue.add(
+        'purge-occurrences',
+        { olderThanDays: DEFAULT_RETENTION_DAYS, projectId: null },
+        { jobId: DEFAULT_JOB_ID, repeat: { pattern: DEFAULT_CRON } },
+      )
+      this.logger.log('Default retention schedule seeded')
+    } catch (err) {
+      this.logger.error(
+        `Failed to seed retention schedule: ${(err as Error).message}`,
+      )
+    }
   }
 
   async listSchedules() {
