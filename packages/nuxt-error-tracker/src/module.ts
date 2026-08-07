@@ -56,6 +56,14 @@ export interface ModuleOptions {
    * Default 0 (off — unlimited).
    */
   maxPerMinute?: number
+  /**
+   * Collapse repeats of the *same* error (same `message` + `source`) that land
+   * within this many ms into a single captured occurrence; the repeats are
+   * dropped at capture. Aimed at client-side retry loops, which fire a second
+   * identical request milliseconds after the first and would otherwise double
+   * every occurrence counter for one user-visible failure. Default 0 (off).
+   */
+  dedupeWindowMs?: number
   /** Max occurrences of the same error captured per session. Default 5. */
   maxPerSession?: number
   /** Max errors per flushed batch. Default 20 (server also caps at 20). */
@@ -100,6 +108,7 @@ export default defineNuxtModule<ModuleOptions>({
     minFlushInterval: 0,
     sampleRate: 1,
     maxPerMinute: 0,
+    dedupeWindowMs: 0,
     maxPerSession: 5,
     maxBatch: 20,
     maxBreadcrumbs: 30,
@@ -119,6 +128,7 @@ export default defineNuxtModule<ModuleOptions>({
       minFlushInterval: nonNegInt(options.minFlushInterval, 0),
       sampleRate: clamp01(options.sampleRate, 1),
       maxPerMinute: nonNegInt(options.maxPerMinute, 0),
+      dedupeWindowMs: nonNegInt(options.dedupeWindowMs, 0),
       maxPerSession: posInt(options.maxPerSession, 5),
       // Server hard-caps batches at 20 — never emit larger, even if misconfigured.
       maxBatch: Math.min(posInt(options.maxBatch, 20), 20),

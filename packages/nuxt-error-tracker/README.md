@@ -188,6 +188,7 @@ per environment (staging vs. production) without touching code.
 | `minFlushInterval`    | `number`  | `0`         | Floor (ms) between consecutive flushes — throttles request rate during an error storm. `0` = off. |
 | `sampleRate`          | `number`  | `1`         | Fraction (0..1) of captured errors actually sent; the rest are dropped at capture. `0.3` ≈ keep 30%. Thins volume before the server rate limit. |
 | `maxPerMinute`        | `number`  | `0`         | Client-side cap on errors queued per rolling minute (fixed window); excess dropped. Mirrors the server per-project rate limit. `0` = unlimited. |
+| `dedupeWindowMs`      | `number`  | `0`         | Collapse repeats of the *same* error (same `message` + `source`) landing within this many ms into one captured occurrence. Aimed at client retry loops, which fire an identical request milliseconds later and would otherwise double the occurrence count for a single user-visible failure. `0` = off. |
 | `maxPerSession`       | `number`  | `5`         | Max occurrences of the *same* error captured per session.          |
 | `maxBatch`            | `number`  | `20`        | Max errors per request (clamped to server hard cap of 20).         |
 | `maxBreadcrumbs`      | `number`  | `30`        | Breadcrumbs kept in the ring buffer / sent per error (clamped to 50). |

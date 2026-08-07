@@ -29,6 +29,7 @@ export default defineNuxtPlugin((nuxtApp) => {
   const MIN_FLUSH_INTERVAL = config.minFlushInterval ?? 0
   const SAMPLE_RATE = config.sampleRate ?? 1
   const MAX_PER_MINUTE = config.maxPerMinute ?? 0 // 0 = unlimited
+  const DEDUPE_WINDOW = config.dedupeWindowMs ?? 0 // 0 = off
   const MAX_PER_SESSION = config.maxPerSession ?? 5
   const MAX_BATCH = config.maxBatch ?? 20
   const MAX_CRUMBS = config.maxBreadcrumbs ?? 30
@@ -51,6 +52,34 @@ export default defineNuxtPlugin((nuxtApp) => {
     }
     if (rateWindowCount >= MAX_PER_MINUTE) return true
     rateWindowCount++
+    return false
+  }
+
+  // Burst dedup: when the same error (message + source) repeats within
+  // DEDUPE_WINDOW ms, only the first is captured. Aimed at retry loops — a
+  // client retry firing the same failed request milliseconds later reaches the
+  // server with an identical fingerprint and would double the occurrence count
+  // for one user-visible failure.
+  const dedupeSeen = new Map<string, number>()
+  const DEDUPE_MAX_KEYS = 100
+  function duplicateInWindow(key: string): boolean {
+    if (!DEDUPE_WINDOW) return false
+    const now = Date.now()
+    const firstSeen = dedupeSeen.get(key)
+    // Fixed window anchored on the first capture — repeats never extend it, so
+    // a steady stream of the same error still reports once per window.
+    if (firstSeen !== undefined && now - firstSeen < DEDUPE_WINDOW) return true
+    if (dedupeSeen.size >= DEDUPE_MAX_KEYS) {
+      for (const [k, t] of dedupeSeen) {
+        if (now - t >= DEDUPE_WINDOW) dedupeSeen.delete(k)
+      }
+      // Still full of live entries — drop the oldest to keep the map bounded.
+      if (dedupeSeen.size >= DEDUPE_MAX_KEYS) {
+        const oldest = dedupeSeen.keys().next().value
+        if (oldest !== undefined) dedupeSeen.delete(oldest)
+      }
+    }
+    dedupeSeen.set(key, now)
     return false
   }
 
@@ -156,6 +185,10 @@ export default defineNuxtPlugin((nuxtApp) => {
       // Client-side sampling: drop a fraction of occurrences before anything
       // else. Runs first so sampled-out errors don't consume session budget.
       if (SAMPLE_RATE < 1 && Math.random() >= SAMPLE_RATE) return
+
+      // Burst dedup runs before the session cap so a retry storm can't eat the
+      // per-session budget for an error the user only actually hit once.
+      if (duplicateInWindow(`${source}::${error.message.slice(0, 200)}`)) return
 
       const key = sessionKey(error.message, error.stack ?? '')
       const count = sessionCounts.get(key) ?? 0

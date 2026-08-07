@@ -188,6 +188,7 @@ export default defineNuxtConfig({
 | `minFlushInterval`    | `number`  | `0`         | Мін. пауза (мс) між флашами — throttle частоти запитів під час шторму помилок. `0` = вимкнено. |
 | `sampleRate`          | `number`  | `1`         | Частка (0..1) захоплених помилок, що реально шлються; решта дропається при capture. `0.3` ≈ 30%. Ріже обʼєм до серверного rate limit. |
 | `maxPerMinute`        | `number`  | `0`         | Клієнтський ліміт помилок у чергу за rolling-хвилину (fixed window); понад — дроп. Дзеркалить серверний per-project rate limit. `0` = без ліміту. |
+| `dedupeWindowMs`      | `number`  | `0`         | Схлопує повтори *тієї самої* помилки (однакові `message` + `source`) у межах N мс в один occurrence. Для клієнтських retry-циклів: повторний запит летить через мілісекунди, має той самий fingerprint і подвоює лічильник для одного видимого користувачу збою. `0` = вимкнено. |
 | `maxPerSession`       | `number`  | `5`         | Макс. кількість occurrences *тієї самої* помилки за сесію.          |
 | `maxBatch`            | `number`  | `20`        | Макс. помилок на запит (обрізається серверним лімітом 20).         |
 | `maxBreadcrumbs`      | `number`  | `30`        | Breadcrumbs у ring buffer / на помилку (обрізається до 50).        |
