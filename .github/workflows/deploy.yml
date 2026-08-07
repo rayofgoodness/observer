@@ -1,0 +1,30 @@
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Деплої не паралеляться: два білди в одній прод-папці затопчуть один одного.
+# cancel-in-progress: false — обривати деплой посеред рестарту сервісу гірше,
+# ніж дочекатися його завершення.
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # Мітка observer відділяє цей runner від foodie-rpi на тій самій машині.
+    runs-on: [self-hosted, observer]
+    timeout-minutes: 40
+
+    steps:
+      # Чекаутимо в робочу папку runner'а тільки заради самого скрипта — щоб
+      # деплой виконувався тією версією deploy.sh, що прийшла в цьому коміті.
+      # Прод-папку скрипт оновлює сам (APP_DIR).
+      - uses: actions/checkout@v4
+
+      - name: Deploy
+        run: ./scripts/deploy.sh
+        env:
+          APP_DIR: /home/pi/Projects/observer-app
