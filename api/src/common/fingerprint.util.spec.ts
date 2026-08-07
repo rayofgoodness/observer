@@ -103,6 +103,81 @@ describe('computeFingerprint', () => {
       )
     })
 
+    it('collapses Nuxt bare-hash chunks so one bug is not regrouped per deploy', () => {
+      // Real prod frames: the same failure fragmented into a new group on every
+      // release because `_nuxt/<hash>.js` rotates while the code does not.
+      const frame = (chunk: string) =>
+        [
+          'Error: boom',
+          `    @https://casy.beauty/_nuxt/${chunk}.js:5:5022`,
+        ].join('\n')
+      const chunks = [
+        'Dm8bJ3HT',
+        'YF4z4yq4',
+        'CBKeYB7v',
+        'DYMK7D-b',
+        'P_xoVecu',
+        'CtxYNUD2',
+        'VkuzkEMI',
+      ]
+      const first = computeFingerprint('boom', frame(chunks[0]))
+      for (const chunk of chunks.slice(1)) {
+        expect(computeFingerprint('boom', frame(chunk))).toBe(first)
+      }
+    })
+
+    it('collapses Vite `name-HASH.js` chunks but keeps the readable name', () => {
+      const a = [
+        'Error: boom',
+        '    at go (/assets/entry-Dm8bJ3HT.js:1:1)',
+      ].join('\n')
+      const b = [
+        'Error: boom',
+        '    at go (/assets/entry-YF4z4yq4.js:1:1)',
+      ].join('\n')
+      const other = [
+        'Error: boom',
+        '    at go (/assets/vendor-YF4z4yq4.js:1:1)',
+      ].join('\n')
+      expect(computeFingerprint('boom', a)).toBe(computeFingerprint('boom', b))
+      // `entry` vs `vendor` is real signal — masking the hash must not erase it.
+      expect(computeFingerprint('boom', a)).not.toBe(
+        computeFingerprint('boom', other),
+      )
+    })
+
+    it('collapses webpack `name.HASH.js` chunks', () => {
+      const a = [
+        'Error: boom',
+        '    at go (/static/main.a1b2c3d4.js:1:1)',
+      ].join('\n')
+      const b = [
+        'Error: boom',
+        '    at go (/static/main.9f8e7d6c.js:1:1)',
+      ].join('\n')
+      expect(computeFingerprint('boom', a)).toBe(computeFingerprint('boom', b))
+    })
+
+    it('does not mask plain lowercase filenames — they are real signal', () => {
+      const a = ['Error: boom', '    at go (/src/scheduler.js:1:1)'].join('\n')
+      const b = ['Error: boom', '    at go (/src/reactivity.js:1:1)'].join('\n')
+      expect(computeFingerprint('boom', a)).not.toBe(
+        computeFingerprint('boom', b),
+      )
+    })
+
+    it('does not mask kebab-case module names', () => {
+      const a = ['Error: boom', '    at go (/src/my-component.js:1:1)'].join(
+        '\n',
+      )
+      const b = ['Error: boom', '    at go (/src/my-container.js:1:1)'].join(
+        '\n',
+      )
+      expect(computeFingerprint('boom', a)).not.toBe(
+        computeFingerprint('boom', b),
+      )
+    })
+
     it('strips query strings from bundle URLs so cache-busted builds collapse', () => {
       const a = [
         'Error: boom',
