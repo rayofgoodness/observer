@@ -180,6 +180,7 @@ per environment (staging vs. production) without touching code.
 | `publicKey`           | `string`  | `''`        | Your project's public key (`pk_…`). **Required**.                  |
 | `appVersion`          | `string`  | `'unknown'` | Tags every batch with a release/version so you can filter by it.   |
 | `enabled`             | `boolean` | `true`      | Master switch. `false` = fully disabled, plugin not registered.    |
+| `captureInDev`        | `boolean` | `false`     | Register the plugin under `nuxt dev` too. Off by default: a dev server usually inherits the production `.env` and would report into the same project as real users. Turn on only against a scratch project. |
 | `captureFetch`        | `boolean` | `true`      | Wrap `fetch` to breadcrumb requests and report failures / 5xx.     |
 | `captureFetchDetails` | `boolean` | `true`      | Attach full request/response detail (method, status, timing, headers, request payload, response body) to each fetch breadcrumb. Sensitive headers redacted, bodies truncated to 2 KB. Set `false` to keep fetch crumbs message-only (avoids capturing payloads / PII). |
 | `captureConsole`      | `boolean` | `true`      | Patch `console.error` to capture logged-but-not-thrown errors.     |

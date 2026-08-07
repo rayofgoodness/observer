@@ -10,6 +10,14 @@ export interface ModuleOptions {
   publicKey: string
   appVersion?: string
   enabled?: boolean
+  /**
+   * Also register the plugin under `nuxt dev`. Default false: a dev server
+   * usually inherits the production `.env`, so every local run would report
+   * into the same project as real users — tagged with the same app version,
+   * indistinguishable from production traffic in the console. Set true only
+   * when you deliberately want to exercise the SDK against a scratch project.
+   */
+  captureInDev?: boolean
   /** Wrap window.fetch to capture failed requests (network errors + 5xx). Default true. */
   captureFetch?: boolean
   /**
@@ -100,6 +108,7 @@ export default defineNuxtModule<ModuleOptions>({
     publicKey: '',
     appVersion: 'unknown',
     enabled: true,
+    captureInDev: false,
     captureFetch: true,
     captureFetchDetails: true,
     captureConsole: true,
@@ -115,6 +124,9 @@ export default defineNuxtModule<ModuleOptions>({
   },
   setup(options, nuxt) {
     if (!options.enabled || !options.endpoint || !options.publicKey) return
+    // `nuxt.options.dev` is Nuxt's own answer to "is this a dev server", so the
+    // gate holds regardless of how NODE_ENV or the .env file happen to be set.
+    if (nuxt.options.dev && !options.captureInDev) return
 
     nuxt.options.runtimeConfig.public.errorTracker = {
       endpoint: options.endpoint,
