@@ -82,7 +82,10 @@ restart_and_check() {
   log "Health-check $HEALTH_URL (до ${HEALTH_TIMEOUT}s)"
   local deadline=$((SECONDS + HEALTH_TIMEOUT))
   while ((SECONDS < deadline)); do
-    if curl -fsS -o /dev/null --max-time 5 "$HEALTH_URL"; then
+    # -s без -S: поки сервіс піднімається, curl законно фейлиться — не шумимо.
+    # /dashboard віддає 302 (редірект на логін) — для curl -f це успіх, і цього
+    # досить: Nest піднявся і роутинг живий. Окремого /health у застосунку немає.
+    if curl -fs -o /dev/null --max-time 5 "$HEALTH_URL"; then
       log "Сервіс відповідає"
       return 0
     fi
