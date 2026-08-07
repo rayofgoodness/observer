@@ -57,6 +57,17 @@ const detail = reactive<{ error: ErrorRow | null; occurrences: Occurrence[] }>({
   occurrences: [],
 })
 
+// Checked rows, by error id. Cleared on every (re)load — offsets and filters
+// shift what's on screen, and a hidden selection would delete the unexpected.
+const selected = ref<number[]>([])
+const busy = ref(false)
+// Inline confirmation instead of window.confirm: deletes are irreversible, and
+// a native dialog blocks the whole page.
+const confirmState = reactive<{
+  text: string
+  run: null | (() => Promise<void>)
+}>({ text: '', run: null })
+
 async function loadList() {
   loading.value = true
   try {
@@ -71,6 +82,7 @@ async function loadList() {
     )
     list.items = res.items
     list.total = res.total
+    selected.value = []
   } catch (e) {
     toast((e as Error).message, true)
   } finally {
@@ -111,6 +123,103 @@ async function setStatus(status: string) {
   } catch (e) {
     toast((e as Error).message, true)
   }
+}
+
+function toggleRow(id: number) {
+  const i = selected.value.indexOf(id)
+  if (i >= 0) selected.value.splice(i, 1)
+  else selected.value.push(id)
+}
+
+const allOnPageSelected = computed(
+  () =>
+    list.items.length > 0 &&
+    list.items.every((e) => selected.value.includes(e.id)),
+)
+
+function toggleAll() {
+  selected.value = allOnPageSelected.value ? [] : list.items.map((e) => e.id)
+}
+
+function askConfirm(text: string, run: () => Promise<void>) {
+  confirmState.text = text
+  confirmState.run = run
+}
+
+function cancelConfirm() {
+  confirmState.text = ''
+  confirmState.run = null
+}
+
+async function runConfirm() {
+  const fn = confirmState.run
+  if (!fn || busy.value) return
+  busy.value = true
+  try {
+    await fn()
+    cancelConfirm()
+  } catch (e) {
+    toast((e as Error).message, true)
+  } finally {
+    busy.value = false
+  }
+}
+
+/**
+ * Reload after a delete. When the current page just lost its last rows, step
+ * back one page so the user doesn't land on an empty screen.
+ */
+async function reloadAfterDelete(removed: number) {
+  if (list.offset > 0 && list.offset >= list.total - removed) {
+    list.offset = Math.max(0, list.offset - PAGE_SIZE.value)
+  }
+  await loadList()
+}
+
+function askDeleteOne(id: number) {
+  askConfirm(
+    'Delete this error group and all of its occurrences?',
+    async () => {
+      await api('DELETE', `${props.apiBase}/errors/${id}`)
+      toast('Error deleted')
+      if (view.value === 'detail') view.value = 'list'
+      await reloadAfterDelete(1)
+    },
+  )
+}
+
+function askDeleteSelected() {
+  const ids = [...selected.value]
+  if (!ids.length) return
+  askConfirm(
+    `Delete ${ids.length} error group(s) and all of their occurrences?`,
+    async () => {
+      const res = await api<{ deleted: number }>(
+        'POST',
+        `${props.apiBase}/errors/bulk-delete`,
+        { ids },
+      )
+      toast(`Deleted ${res.deleted} error(s)`)
+      await reloadAfterDelete(res.deleted)
+    },
+  )
+}
+
+function askDeleteAll() {
+  const scope = list.status ? `all "${list.status}" errors` : 'ALL errors'
+  askConfirm(
+    `Delete ${scope} of "${props.projectName || props.projectKey}"? This cannot be undone.`,
+    async () => {
+      const qs = list.status ? `?status=${encodeURIComponent(list.status)}` : ''
+      const res = await api<{ deleted: number }>(
+        'DELETE',
+        `${props.apiBase}/projects/${encodeURIComponent(props.projectKey)}/errors${qs}`,
+      )
+      toast(`Deleted ${res.deleted} error(s)`)
+      list.offset = 0
+      await loadList()
+    },
+  )
 }
 
 function setFilter(status: string) {
@@ -156,6 +265,7 @@ watch(
       view.value = 'list'
       list.offset = 0
       list.status = ''
+      cancelConfirm()
       loadList()
     }
   },
@@ -173,6 +283,16 @@ function onOverlayClick(e: MouseEvent) {
       <div class="modal-head">
         <h3>Errors · {{ projectName || projectKey }}</h3>
         <button class="x" @click="emit('close')">✕ Close</button>
+      </div>
+
+      <div v-if="confirmState.run" class="confirm">
+        <span>{{ confirmState.text }}</span>
+        <div class="actions">
+          <button class="ghost" :disabled="busy" @click="cancelConfirm">Cancel</button>
+          <button class="danger" :disabled="busy" @click="runConfirm">
+            {{ busy ? 'Deleting…' : 'Delete' }}
+          </button>
+        </div>
       </div>
 
       <div v-if="loading" class="empty">Loading…</div>
@@ -201,26 +321,60 @@ function onOverlayClick(e: MouseEvent) {
         <div v-if="!list.items.length" class="empty">
           No errors<template v-if="list.status"> with status "{{ list.status }}"</template>.
         </div>
-        <table v-else>
-          <thead>
-            <tr>
-              <th>Count</th><th>Level</th><th>Source</th><th>Status</th><th>Message</th><th>Last seen</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="e in list.items" :key="e.id" class="err-row" @click="openDetail(e.id)">
-              <td>{{ e.occurrences_count }}</td>
-              <td><span class="lvl" :class="e.level || 'error'">{{ e.level || 'error' }}</span></td>
-              <td><span class="src">{{ e.source }}</span></td>
-              <td>
-                <span class="badge" :class="e.status">{{ e.status }}</span>
-                <span v-if="e.jira_key" class="muted" style="font-size: 11px"> {{ e.jira_key }}</span>
-              </td>
-              <td style="max-width: 360px">{{ e.message }}</td>
-              <td class="muted" style="font-size: 12px">{{ fmtDate(e.last_seen) }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <template v-else>
+          <div class="bulkbar">
+            <span class="muted" style="font-size: 12px">
+              <template v-if="selected.length">{{ selected.length }} selected</template>
+              <template v-else>Select rows to delete, or wipe the project.</template>
+            </span>
+            <div class="actions">
+              <button class="ghost" :disabled="!selected.length || busy" @click="askDeleteSelected">
+                Delete selected<template v-if="selected.length"> ({{ selected.length }})</template>
+              </button>
+              <button class="danger" :disabled="busy" @click="askDeleteAll">
+                Delete all<template v-if="list.status"> "{{ list.status }}"</template>
+              </button>
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th class="cb">
+                  <input
+                    type="checkbox"
+                    :checked="allOnPageSelected"
+                    title="Select all on this page"
+                    @change="toggleAll"
+                  />
+                </th>
+                <th>Count</th><th>Level</th><th>Source</th><th>Status</th><th>Message</th><th>Last seen</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="e in list.items" :key="e.id" class="err-row" @click="openDetail(e.id)">
+                <td class="cb" @click.stop>
+                  <input
+                    type="checkbox"
+                    :checked="selected.includes(e.id)"
+                    @change="toggleRow(e.id)"
+                  />
+                </td>
+                <td>{{ e.occurrences_count }}</td>
+                <td><span class="lvl" :class="e.level || 'error'">{{ e.level || 'error' }}</span></td>
+                <td><span class="src">{{ e.source }}</span></td>
+                <td>
+                  <span class="badge" :class="e.status">{{ e.status }}</span>
+                  <span v-if="e.jira_key" class="muted" style="font-size: 11px"> {{ e.jira_key }}</span>
+                </td>
+                <td style="max-width: 360px">{{ e.message }}</td>
+                <td class="muted" style="font-size: 12px">{{ fmtDate(e.last_seen) }}</td>
+                <td @click.stop>
+                  <button class="ghost del" :disabled="busy" @click="askDeleteOne(e.id)">Delete</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </template>
       </template>
 
       <!-- detail -->
@@ -236,10 +390,13 @@ function onOverlayClick(e: MouseEvent) {
               <template v-if="detail.error.first_seen">· first {{ fmtDate(detail.error.first_seen) }}</template>
             </span>
           </div>
-          <div v-if="advanced" class="actions">
-            <button class="ghost" :disabled="detail.error.status === 'resolved'" @click="setStatus('resolved')">Resolve</button>
-            <button class="ghost" :disabled="detail.error.status === 'ignored'" @click="setStatus('ignored')">Ignore</button>
-            <button class="ghost" :disabled="detail.error.status === 'new'" @click="setStatus('new')">Reopen</button>
+          <div class="actions">
+            <template v-if="advanced">
+              <button class="ghost" :disabled="detail.error.status === 'resolved'" @click="setStatus('resolved')">Resolve</button>
+              <button class="ghost" :disabled="detail.error.status === 'ignored'" @click="setStatus('ignored')">Ignore</button>
+              <button class="ghost" :disabled="detail.error.status === 'new'" @click="setStatus('new')">Reopen</button>
+            </template>
+            <button class="danger" :disabled="busy" @click="askDeleteOne(detail.error.id)">Delete</button>
           </div>
         </div>
         <div style="font-weight: 600; margin-bottom: 2px">{{ detail.error.message }}</div>
@@ -289,6 +446,40 @@ function onOverlayClick(e: MouseEvent) {
 </template>
 
 <style scoped>
+.confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.1);
+  font-size: 13px;
+}
+.bulkbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.cb {
+  width: 28px;
+  text-align: center;
+}
+.cb input {
+  cursor: pointer;
+  margin: 0;
+  width: auto;
+}
+.del {
+  padding: 2px 8px;
+  font-size: 11px;
+}
 .occ-row {
   cursor: pointer;
 }

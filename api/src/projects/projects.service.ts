@@ -186,6 +186,46 @@ export class ProjectsService {
     return (row as ErrorRow) ?? null
   }
 
+  /**
+   * Delete error groups by id — `error_occurrences` go with them via the FK's
+   * ON DELETE CASCADE. `projectId`, when given, scopes the delete so a caller
+   * can never reach rows outside that project. Returns how many were removed.
+   */
+  async deleteErrors(ids: number[], projectId?: number): Promise<number> {
+    if (!ids.length) return 0
+    const q = this.db('errors').whereIn('id', ids)
+    if (projectId !== undefined) q.andWhere('project_id', projectId)
+    return q.del()
+  }
+
+  /**
+   * Delete every error of a project, optionally only those in one status.
+   * Returns null when the project doesn't exist (so callers can 404).
+   */
+  async deleteErrorsByPublicKey(
+    publicKey: string,
+    status?: string,
+  ): Promise<number | null> {
+    const project = await this.db('projects')
+      .where({ public_key: publicKey })
+      .first('id')
+    if (!project) return null
+    const q = this.db('errors').where('project_id', project.id)
+    if (status) q.andWhere('status', status)
+    return q.del()
+  }
+
+  /** Subset of the given error ids whose project is owned by the user. */
+  async filterErrorsOwnedBy(ids: number[], userId: number): Promise<number[]> {
+    if (!ids.length) return []
+    const rows = await this.db('errors as e')
+      .join('projects as p', 'p.id', 'e.project_id')
+      .whereIn('e.id', ids)
+      .andWhere('p.user_id', userId)
+      .select('e.id')
+    return rows.map((r) => r.id as number)
+  }
+
   /** One error with its stack and most recent occurrences. */
   async getErrorDetail(id: number): Promise<{
     error: ErrorRow & { stack: string; project_id: number }

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   NotFoundException,
@@ -13,12 +14,16 @@ import {
   UseGuards,
 } from '@nestjs/common'
 import {
+  ArrayMaxSize,
+  ArrayNotEmpty,
   IsArray,
   IsBoolean,
+  IsInt,
   IsOptional,
   IsString,
   MaxLength,
 } from 'class-validator'
+import { parseStatusFilter } from '../common/error-status.util'
 import { ProjectsService } from '../projects/projects.service'
 import { TelegramService } from '../telegram/telegram.service'
 import { type AuthedRequest, AuthGuard } from './auth.guard'
@@ -53,6 +58,14 @@ class UpdateProjectDto {
   @IsOptional()
   @IsBoolean()
   telegramEnabled?: boolean
+}
+
+class DeleteErrorsDto {
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(500)
+  @IsInt({ each: true })
+  ids!: number[]
 }
 
 // Self-service project + error management for the signed-in user. Every route
@@ -174,6 +187,47 @@ export class AccountController {
     const detail = await this.projects.getErrorDetail(id)
     if (!detail) throw new NotFoundException('Error not found')
     return detail
+  }
+
+  // --- Deleting logs (occurrences cascade with the error group) ---
+
+  /** Bulk delete. POST, not DELETE, because a body on DELETE is unreliable. */
+  @Post('errors/bulk-delete')
+  async deleteErrors(@Req() req: AuthedRequest, @Body() body: DeleteErrorsDto) {
+    // Filter to the ids this user actually owns, then delete only those — an
+    // id from someone else's project is silently skipped, never touched.
+    const owned = await this.projects.filterErrorsOwnedBy(body.ids, req.user.id)
+    const deleted = await this.projects.deleteErrors(owned)
+    return { deleted, skipped: body.ids.length - deleted }
+  }
+
+  @Delete('errors/:id')
+  async deleteError(
+    @Req() req: AuthedRequest,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    if (!(await this.projects.errorBelongsToUser(id, req.user.id))) {
+      throw new NotFoundException('Error not found')
+    }
+    const deleted = await this.projects.deleteErrors([id])
+    if (!deleted) throw new NotFoundException('Error not found')
+    return { deleted }
+  }
+
+  /** Wipe the project's errors, optionally only those in one status. */
+  @Delete('projects/:publicKey/errors')
+  async deleteProjectErrors(
+    @Req() req: AuthedRequest,
+    @Param('publicKey') publicKey: string,
+    @Query('status') status?: string,
+  ) {
+    await this.own(publicKey, req.user.id)
+    const deleted = await this.projects.deleteErrorsByPublicKey(
+      publicKey,
+      parseStatusFilter(status),
+    )
+    if (deleted === null) throw new NotFoundException('Project not found')
+    return { deleted }
   }
 
   /** Assert the user owns the project or throw — used before any mutation. */

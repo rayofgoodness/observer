@@ -12,6 +12,8 @@ import {
   UseGuards,
 } from '@nestjs/common'
 import {
+  ArrayMaxSize,
+  ArrayNotEmpty,
   IsArray,
   IsBoolean,
   IsIn,
@@ -22,6 +24,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator'
+import { ERROR_STATUSES, parseStatusFilter } from '../common/error-status.util'
 import { MaintenanceService } from '../maintenance/maintenance.service'
 import { ProjectsService } from '../projects/projects.service'
 import { AdminGuard } from './admin.guard'
@@ -107,8 +110,16 @@ class UpdateProjectDto {
 }
 
 class UpdateErrorDto {
-  @IsIn(['new', 'resolved', 'ignored'])
+  @IsIn(ERROR_STATUSES)
   status!: string
+}
+
+class DeleteErrorsDto {
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(500)
+  @IsInt({ each: true })
+  ids!: number[]
 }
 
 @Controller('admin')
@@ -223,5 +234,35 @@ export class AdminController {
     const row = await this.projects.setErrorStatus(id, body.status)
     if (!row) throw new NotFoundException('Error not found')
     return row
+  }
+
+  // --- Deleting logs (occurrences cascade with the error group) ---
+
+  /** Bulk delete. POST, not DELETE, because a body on DELETE is unreliable. */
+  @Post('errors/bulk-delete')
+  async deleteErrors(@Body() body: DeleteErrorsDto) {
+    const deleted = await this.projects.deleteErrors(body.ids)
+    return { deleted }
+  }
+
+  @Delete('errors/:id')
+  async deleteError(@Param('id', ParseIntPipe) id: number) {
+    const deleted = await this.projects.deleteErrors([id])
+    if (!deleted) throw new NotFoundException('Error not found')
+    return { deleted }
+  }
+
+  /** Wipe a project's errors, optionally only those in one status. */
+  @Delete('projects/:publicKey/errors')
+  async deleteProjectErrors(
+    @Param('publicKey') publicKey: string,
+    @Query('status') status?: string,
+  ) {
+    const deleted = await this.projects.deleteErrorsByPublicKey(
+      publicKey,
+      parseStatusFilter(status),
+    )
+    if (deleted === null) throw new NotFoundException('Project not found')
+    return { deleted }
   }
 }
