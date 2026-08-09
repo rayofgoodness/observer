@@ -6,7 +6,8 @@
 // (api/src/ingest/ingest.codec.ts). Schema (field numbers are load-bearing):
 //   Breadcrumb { type=1 category=2 message=3 level=4 timestamp=5 data=6 }
 //   Error { message=1 stack=2 source=3 url=4 route=5 userId=6 appVersion=7
-//           device=8 occurredAt=9 breadcrumbs=10 (repeated Breadcrumb) level=11 }
+//           device=8 occurredAt=9 breadcrumbs=10 (repeated Breadcrumb) level=11
+//           ageMs=12 (uint32, wire type 0 — every other field here is type 2) }
 //   Meta  { device=1 userId=2 appVersion=3 }
 //   Batch { meta=1 (Meta) errors=2 (repeated Error) }
 
@@ -26,6 +27,14 @@ function pushLenField(out: number[], fieldNo: number, bytes: number[]): void {
   pushVarint(out, (fieldNo << 3) | 2)
   pushVarint(out, bytes.length)
   for (let i = 0; i < bytes.length; i++) out.push(bytes[i])
+}
+
+// Varint field (wire type 0). proto3 omits zero, and zero is also the honest
+// default here — an error flushed in the same tick it was captured.
+function pushUint32(out: number[], fieldNo: number, value: number): void {
+  if (!Number.isFinite(value) || value <= 0) return
+  pushVarint(out, (fieldNo << 3) | 0)
+  pushVarint(out, Math.min(Math.round(value), 0xffffffff))
 }
 
 // proto3 omits empty strings (decoder defaults them to '').
@@ -64,6 +73,13 @@ export interface FlushError {
   url: string
   route: string
   occurredAt: string
+  /**
+   * How long before this flush the error happened, measured with the monotonic
+   * clock. The server prefers it over `occurredAt`: `occurredAt` is only as
+   * good as the device clock, and bot render farms freeze that clock outright,
+   * which used to index errors hours away from when they really happened.
+   */
+  ageMs?: number
   level?: ErrorLevel
   breadcrumbs?: Crumb[]
 }
@@ -101,6 +117,7 @@ function encodeError(e: FlushError): number[] {
     pushLenField(out, 10, encodeBreadcrumb(c))
   }
   pushString(out, 11, e.level ?? '')
+  pushUint32(out, 12, e.ageMs ?? 0)
   return out
 }
 

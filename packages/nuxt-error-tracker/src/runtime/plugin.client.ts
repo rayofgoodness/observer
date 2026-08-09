@@ -16,6 +16,16 @@ interface CapturedError {
   route: string
   occurredAt: string
   breadcrumbs: Crumb[]
+  /**
+   * `performance.now()` at capture — never sent as-is, only as the `ageMs`
+   * delta computed at flush. It comes from the monotonic clock, so it survives
+   * everything that makes `occurredAt` untrustworthy: a wrong device clock, an
+   * NTP correction mid-session, or a bot render farm pinning `Date.now()` to a
+   * fixed instant. Queue entries can wait a long time before they ship — a
+   * re-queued batch after a network drop, a beacon on page-hide — and the delay
+   * has to come off the flush, not the capture.
+   */
+  capturedAtMono: number
 }
 
 export default defineNuxtPlugin((nuxtApp) => {
@@ -115,6 +125,16 @@ export default defineNuxtPlugin((nuxtApp) => {
   // can never grow it without bound (re-queued failed batches included).
   const MAX_QUEUE = 200
 
+  // Guarded because a few embedded webviews ship without performance.now().
+  // The fallback degrades to a wall-clock delta, which still cancels out a
+  // constantly-wrong clock — only a clock *jump* while the entry sits in the
+  // queue can distort it, and that is far rarer than a clock that is simply set
+  // wrong.
+  const monoNow = (): number =>
+    typeof performance !== 'undefined' && typeof performance.now === 'function'
+      ? performance.now()
+      : Date.now()
+
   function flush(useBeacon = false) {
     if (!queue.length) return
     lastFlushAt = Date.now()
@@ -122,13 +142,21 @@ export default defineNuxtPlugin((nuxtApp) => {
     // flush runs from timers, visibilitychange, and the fetch wrapper.
     try {
       const batch = queue.splice(0, MAX_BATCH)
+      // Age is measured against *this* flush, not the capture, so a re-queued
+      // batch reports the full delay it actually sat through. `batch` keeps its
+      // capturedAtMono for exactly that reason — the retry below re-queues the
+      // originals, and the next attempt recomputes from scratch.
+      const flushedAtMono = monoNow()
       const body = {
         meta: {
           device: deviceInfo(),
           userId: resolveUserId(),
           appVersion: config.appVersion,
         },
-        errors: batch,
+        errors: batch.map(({ capturedAtMono, ...error }) => ({
+          ...error,
+          ageMs: Math.max(0, Math.round(flushedAtMono - capturedAtMono)),
+        })),
       }
 
       // Binary wire format (protobuf) — payload isn't human-readable in the
@@ -207,6 +235,7 @@ export default defineNuxtPlugin((nuxtApp) => {
         url: window.location.href.slice(0, 2000),
         route: route.fullPath.slice(0, 500),
         occurredAt: new Date().toISOString(),
+        capturedAtMono: monoNow(),
         // Snapshot the trail leading up to this error (copy, not reference).
         breadcrumbs: crumbs.slice(-MAX_CRUMBS),
       })
