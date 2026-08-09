@@ -25,6 +25,11 @@ message Error {
   string occurredAt = 9;
   repeated Breadcrumb breadcrumbs = 10;
   string level = 11;
+  // Monotonic ms between capture and flush, sent since SDK 0.1.22. This API
+  // does not read it yet — the Loki ingest does, to place an entry when the
+  // device clock cannot be trusted. Declared here so the field number stays
+  // reserved and the two decoders keep describing the same wire.
+  uint32 ageMs = 12;
 }
 message Meta {
   string device = 1;
