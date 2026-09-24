@@ -7,6 +7,26 @@ import { KNEX } from '../database/database.module'
 import type { Project } from '../projects/projects.service'
 import type { IngestDto } from './dto/ingest.dto'
 
+interface ErrorGroup {
+  fingerprint: string
+  message: string
+  stack: string
+  source: string
+  level: string
+  count: number
+}
+
+interface PendingOccurrence {
+  fingerprint: string
+  row: Record<string, unknown>
+}
+
+interface UpsertedError {
+  id: number
+  fingerprint: string
+  is_new: boolean
+}
+
 @Injectable()
 export class IngestService {
   constructor(
@@ -19,37 +39,38 @@ export class IngestService {
       `[ingest] project=${project.name} (id=${project.id}) errors=${dto.errors.length}`,
       dto.errors.map((e) => e.message),
     )
-    const newErrorIds: number[] = []
     const items = dto.errors
+
+    // Collapse the batch into one row per fingerprint. A single bulk
+    // `INSERT ... ON CONFLICT DO UPDATE` may not touch the same row twice
+    // ("cannot affect row a second time"), and repeats of the same error in one
+    // batch are the common case. `count` carries how many occurrences the group
+    // gets, so occurrences_count stays exact.
+    const groups = new Map<string, ErrorGroup>()
+    const occurrences: PendingOccurrence[] = []
 
     for (const item of items) {
       const message = item.message.trim()
       if (!message) continue
       const stack = item.stack ?? ''
       const fingerprint = computeFingerprint(message, stack)
-
       const level = item.level ?? 'error'
 
-      const [row] = await this.db('errors')
-        .insert({
-          project_id: project.id,
+      const group = groups.get(fingerprint)
+      if (group) {
+        group.count++
+        // Reflect the most recent occurrence's severity on the group.
+        group.level = level
+      } else {
+        groups.set(fingerprint, {
           fingerprint,
           message,
           stack,
           source: item.source ?? 'unknown',
           level,
-          first_seen: this.db.fn.now(),
-          last_seen: this.db.fn.now(),
-          occurrences_count: 1,
+          count: 1,
         })
-        .onConflict(['project_id', 'fingerprint'])
-        .merge({
-          last_seen: this.db.fn.now(),
-          // Reflect the most recent occurrence's severity on the group.
-          level,
-          occurrences_count: this.db.raw('errors.occurrences_count + 1'),
-        })
-        .returning(['id', this.db.raw('(xmax = 0) as is_new')])
+      }
 
       const effectiveDevice = item.device ?? dto.meta?.device ?? {}
       const device =
@@ -75,21 +96,78 @@ export class IngestService {
           ? [{ type: 'truncated', message: 'breadcrumbs too large' }]
           : breadcrumbs
 
-      await this.db('error_occurrences').insert({
-        error_id: row.id,
-        project_id: project.id,
-        user_id: item.userId ?? dto.meta?.userId ?? null,
-        url: item.url ?? '',
-        route: item.route ?? '',
-        device: JSON.stringify(device),
-        breadcrumbs: JSON.stringify(safeBreadcrumbs),
-        app_version: item.appVersion ?? dto.meta?.appVersion ?? '',
-        occurred_at: item.occurredAt
-          ? new Date(item.occurredAt)
-          : this.db.fn.now(),
+      occurrences.push({
+        fingerprint,
+        row: {
+          project_id: project.id,
+          user_id: item.userId ?? dto.meta?.userId ?? null,
+          url: item.url ?? '',
+          route: item.route ?? '',
+          device: JSON.stringify(device),
+          breadcrumbs: JSON.stringify(safeBreadcrumbs),
+          app_version: item.appVersion ?? dto.meta?.appVersion ?? '',
+          occurred_at: item.occurredAt
+            ? new Date(item.occurredAt)
+            : this.db.fn.now(),
+        },
       })
+    }
 
-      if (row.is_new) newErrorIds.push(row.id)
+    const newErrorIds: number[] = []
+
+    if (groups.size) {
+      // Two statements in one transaction regardless of batch size: atomic
+      // (no half-ingested batch) and O(1) round-trips instead of 2 per error.
+      await this.db.transaction(async (trx) => {
+        // Sorted by fingerprint so concurrent batches lock overlapping rows in
+        // the same order — otherwise two upserts can deadlock each other.
+        const sorted = [...groups.values()].sort((a, b) =>
+          a.fingerprint < b.fingerprint ? -1 : 1,
+        )
+
+        // RETURNING order is not guaranteed under ON CONFLICT, so ids are
+        // matched back to occurrences by fingerprint.
+        const rows: UpsertedError[] = await trx('errors')
+          .insert(
+            sorted.map((g) => ({
+              project_id: project.id,
+              fingerprint: g.fingerprint,
+              message: g.message,
+              stack: g.stack,
+              source: g.source,
+              level: g.level,
+              first_seen: trx.fn.now(),
+              last_seen: trx.fn.now(),
+              occurrences_count: g.count,
+            })),
+          )
+          .onConflict(['project_id', 'fingerprint'])
+          .merge({
+            last_seen: trx.fn.now(),
+            level: trx.raw('excluded.level'),
+            occurrences_count: trx.raw(
+              'errors.occurrences_count + excluded.occurrences_count',
+            ),
+          })
+          .returning([
+            'id',
+            'fingerprint',
+            trx.raw('(xmax = 0) as is_new'),
+          ])
+
+        const idByFingerprint = new Map<string, number>()
+        for (const row of rows) {
+          idByFingerprint.set(row.fingerprint, row.id)
+          if (row.is_new) newErrorIds.push(row.id)
+        }
+
+        await trx('error_occurrences').insert(
+          occurrences.map(({ fingerprint, row }) => ({
+            error_id: idByFingerprint.get(fingerprint),
+            ...row,
+          })),
+        )
+      })
     }
 
     // Telegram: new error groups are inserted with is_sended = false (DB
@@ -97,10 +175,13 @@ export class IngestService {
     // Re-seen groups keep their existing is_sended, so already-sent errors never
     // re-notify. No enqueue here — the flush job owns delivery.
 
+    // Fire-and-forget: the queue must not delay the client's response, and a
+    // Redis hiccup after the DB commit must not turn into a 5xx (the client
+    // would retry and double-count the batch).
     if (newErrorIds.length && project.ai_jira_enabled) {
-      await Promise.all(
-        newErrorIds.map((id) =>
-          this.jiraQueue.add(
+      for (const id of newErrorIds) {
+        this.jiraQueue
+          .add(
             'create-jira-task',
             { errorId: id, projectId: project.id },
             {
@@ -108,9 +189,11 @@ export class IngestService {
               attempts: 3,
               backoff: { type: 'exponential', delay: 5000 },
             },
-          ),
-        ),
-      )
+          )
+          .catch((err) =>
+            console.error(`[ingest] failed to enqueue jira task for error ${id}`, err),
+          )
+      }
     }
 
     return { ok: true, accepted: items.length, new: newErrorIds.length }
