@@ -2,6 +2,12 @@
 
 Мультитенантний сервіс збору фронтенд-помилок: NestJS API + Nuxt-модуль для клієнтів.
 
+## Демо
+
+![Демо](docs/demo.gif)
+
+[Відео у повній якості (mp4)](docs/demo.mp4)
+
 ```
 error-tracker-saas/
 ├── api/                          NestJS бекенд (Knex + PostgreSQL + Redis + BullMQ)
